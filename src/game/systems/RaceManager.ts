@@ -16,7 +16,7 @@ export type RacePhase = 'countdown' | 'racing' | 'finished';
 
 export interface RaceState {
   phase: RacePhase;
-  countdownValue: number;     // 3, 2, 1, 0 (GO!)
+  countdownValue: number;     // 4, 3, 2, 1, 0 (GO!)
   countdownTimer: number;     // seconds remaining in current countdown step
   raceTime: number;           // elapsed race time in seconds
   positions: number[];        // car IDs sorted by position (first = leader)
@@ -40,7 +40,7 @@ export class RaceManager {
     this.numCars = 0;
     this.state = {
       phase: 'countdown',
-      countdownValue: 3,
+      countdownValue: 4,
       countdownTimer: 1.0,
       raceTime: 0,
       positions: [],
@@ -209,20 +209,26 @@ export class RaceManager {
    * Position = 80% checkpoint distance + 5% lap progress (approximate).
    */
   private updatePositions(): void {
+    const cpCount = this.track.checkpoints.length;
+    const totalCPs = cpCount * this.track.laps;
+
     // Calculate progress for each car
     for (const car of this.cars) {
-      const lapProg = car.curLap / this.track.laps;
-      const cpProg = car.totalCP / (this.track.checkpoints.length * this.track.laps);
+      // Primary: total checkpoints passed (this already encodes laps since totalCP is cumulative)
+      const cpProg = car.totalCP / totalCPs;
 
-      // Distance to next checkpoint for fine-grained ordering
+      // Secondary: distance to next checkpoint for fine-grained ordering
+      // This must be a FRACTION of one checkpoint step so it never outranks
+      // a car that has passed more checkpoints
       let cpDist = 0;
-      if (car.curCP < this.track.checkpoints.length) {
+      if (car.curCP < cpCount) {
         const cp = this.track.checkpoints[car.curCP];
-        cpDist = 1 - (distance(car.x, car.y, cp.x, cp.y) / 5000); // Normalize
+        cpDist = 1 - (distance(car.x, car.y, cp.x, cp.y) / 5000);
         cpDist = Math.max(0, Math.min(1, cpDist));
       }
 
-      car.progress = lapProg * 0.05 + cpProg * 0.80 + cpDist * 0.15;
+      // cpDist contributes at most (1/totalCPs) * 0.9 — always less than one CP step
+      car.progress = cpProg + (cpDist / totalCPs) * 0.9;
 
       // Finished cars always ranked by finish time
       if (car.state === 'finish' || car.state === 'stopCar') {

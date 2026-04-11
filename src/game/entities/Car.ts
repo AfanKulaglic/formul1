@@ -62,6 +62,7 @@ export class Car {
   bang: number = 0;
   finishTime: number = 0;
   onGrass: boolean = false;   // True when off-road (on grass)
+  grassTimer: number = 0;    // How long the car has been continuously on grass (seconds)
 
   // Suspension sway from rapid steering inputs (-1 to 1, negative=left, positive=right)
   suspensionSway: number = 0;

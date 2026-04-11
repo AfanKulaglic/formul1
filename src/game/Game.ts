@@ -16,6 +16,17 @@ import { lerp, toRadians, angleTo, angleDifference, isClockwise, wrapAngle, dist
 
 const NUM_CARS = 6;
 const PLAYER_SLOT = 0; // Player is the first car (pole position)
+const GRASS_RESPAWN_TIME = 5; // Respawn after 5 seconds on grass
+
+export type MenuScreen = 'main' | 'play' | 'rankings' | 'settings';
+export type GamePhase = 'menu' | 'playing';
+
+export interface MenuState {
+  screen: MenuScreen;
+  gamePhase: GamePhase;
+  bestTimes: { position: number; time: number }[];
+  soloMode: boolean;
+}
 
 export class Game {
   private canvas: HTMLCanvasElement;
@@ -38,6 +49,16 @@ export class Game {
   private steerChangeTimestamps: number[] = [];  // recent direction-change times
   private swayTarget: number = 0;
 
+  // Menu state
+  private menuState: MenuState = {
+    screen: 'main',
+    gamePhase: 'menu',
+    bestTimes: [],
+    soloMode: false,
+  };
+  private menuClickHandler: ((e: MouseEvent) => void) | null = null;
+  private menuTouchHandler: ((e: TouchEvent) => void) | null = null;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.track = TRACK0_DATA;
@@ -59,12 +80,13 @@ export class Game {
     window.addEventListener('keydown', this.handleRestart);
     this.input.onTap = this.handleRestartTap;
 
-    this.createCars();
-    this.raceManager.init(this.cars);
+    // Load best times from localStorage
+    this.loadBestTimes();
 
-    // Snap camera to player starting position
-    const player = this.cars.find(c => c.isPlayer)!;
-    this.camera.snapTo(player.x, player.y, player.angle);
+    // Start in menu phase
+    this.menuState.gamePhase = 'menu';
+    this.menuState.screen = 'main';
+    this.attachMenuHandlers();
 
     this.running = true;
     this.lastTime = performance.now();
@@ -78,12 +100,18 @@ export class Game {
       cancelAnimationFrame(this.animFrameId);
     }
     this.input.detach();
+    this.detachMenuHandlers();
     window.removeEventListener('resize', this.resizeCanvas);
     window.removeEventListener('keydown', this.handleRestart);
   }
 
-  /** Restart the race */
+  /** Restart — save time and go back to menu */
   restart(): void {
+    // Save finish time if completed
+    const raceState = this.raceManager.getState();
+    if (raceState.playerFinished && raceState.playerFinishTime > 0) {
+      this.saveBestTime(raceState.playerPosition, raceState.playerFinishTime);
+    }
     this.stop();
     this.cars = [];
     this.raceManager = new RaceManager(this.track);
@@ -91,10 +119,30 @@ export class Game {
     this.start();
   }
 
+  /** Start the actual race (called from menu) */
+  private startRace(solo: boolean): void {
+    this.menuState.gamePhase = 'playing';
+    this.menuState.soloMode = solo;
+    this.detachMenuHandlers();
+
+    this.createCars();
+    this.raceManager.init(this.cars);
+
+    const player = this.cars.find(c => c.isPlayer)!;
+    this.camera.snapTo(player.x, player.y, player.angle);
+  }
+
   private handleRestart = (e: KeyboardEvent): void => {
     if (e.code === 'Space' && this.raceManager.getState().playerFinished) {
       e.preventDefault();
       this.restart();
+    }
+    // Manual respawn: press R while racing
+    if (e.code === 'KeyR' && this.menuState.gamePhase === 'playing') {
+      const player = this.cars.find(c => c.isPlayer);
+      if (player && player.state === 'running') {
+        this.respawnCarToRoad(player);
+      }
     }
   };
 
@@ -112,7 +160,8 @@ export class Game {
    */
   private createCars(): void {
     this.cars = [];
-    const cells = this.track.startCells.slice(0, NUM_CARS);
+    const numCars = this.menuState.soloMode ? 1 : NUM_CARS;
+    const cells = this.track.startCells.slice(0, numCars);
 
     // Player upgrade values (level 1 defaults)
     // maxSpeed from engine, steerSpeed uses Car behavior default (350°/s)
@@ -123,13 +172,27 @@ export class Game {
     const playerDecel = 500;      // px/s² (default)
     const playerGrip = UPGRADE_DEFAULTS.grip.base;         // 110
 
-    // Shuffle team colors for AI
-    const shuffledColors = [...TEAM_COLORS];
-    for (let i = shuffledColors.length - 1; i > 0; i--) {
+    // Build pool of AI-eligible colors: exclude player color (index 0) and black/dark colors
+    const playerColor = TEAM_COLORS[0];
+    const darkThreshold = 60; // RGB sum threshold — below this is "too dark"
+    const aiColorPool: { color: string; teamIndex: number }[] = [];
+    for (let ci = 0; ci < TEAM_COLORS.length; ci++) {
+      if (ci === 0) continue; // skip player color
+      const hex = TEAM_COLORS[ci];
+      // Parse hex to check brightness
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      if (r + g + b < darkThreshold * 3) continue; // skip black/very dark colors
+      aiColorPool.push({ color: hex, teamIndex: ci });
+    }
+    // Shuffle AI color pool
+    for (let i = aiColorPool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [shuffledColors[i], shuffledColors[j]] = [shuffledColors[j], shuffledColors[i]];
+      [aiColorPool[i], aiColorPool[j]] = [aiColorPool[j], aiColorPool[i]];
     }
 
+    let aiColorIdx = 0;
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
       const isPlayer = i === PLAYER_SLOT;
@@ -156,6 +219,9 @@ export class Game {
         const aiMaxSpeed = lerp(1.20 * playerMaxSpeed, 1.20 * playerMaxSpeed, t);
         const aiSteer = lerp(45, 65, t);  // closer to player's 35°/s for fluid visible turns
 
+        const aiTeam = aiColorPool[aiColorIdx % aiColorPool.length];
+        aiColorIdx++;
+
         const config: CarConfig = {
           id: i,
           isPlayer: false,
@@ -167,8 +233,8 @@ export class Game {
           acceleration: 380,
           deceleration: 500,
           gripThreshold: lerp(80, 130, t),
-          teamIndex: i % TEAM_COLORS.length,
-          color: shuffledColors[i % shuffledColors.length],
+          teamIndex: aiTeam.teamIndex,
+          color: aiTeam.color,
         };
         this.cars.push(new Car(config));
       }
@@ -183,8 +249,12 @@ export class Game {
     const dt = Math.min((time - this.lastTime) / 1000, 0.05); // Cap at 50ms
     this.lastTime = time;
 
-    this.update(dt);
-    this.render();
+    if (this.menuState.gamePhase === 'menu') {
+      this.renderMenu();
+    } else {
+      this.update(dt);
+      this.render();
+    }
 
     this.animFrameId = requestAnimationFrame(this.gameLoop);
   };
@@ -291,9 +361,20 @@ export class Game {
       this.handleFenceCollision(car);
     }
 
-    // --- Grass slowdown ---
+    // --- Grass slowdown + off-road respawn ---
     for (const car of this.cars) {
       this.applyGrassSlowdown(car, dt);
+    }
+    for (const car of this.cars) {
+      if (car.state !== 'running') continue;
+      if (car.onGrass) {
+        car.grassTimer += dt;
+        if (car.grassTimer >= GRASS_RESPAWN_TIME) {
+          this.respawnCarToRoad(car);
+        }
+      } else {
+        car.grassTimer = 0;
+      }
     }
 
     // --- Car-to-car collision ---
@@ -378,6 +459,58 @@ export class Game {
     }
   }
 
+  /**
+   * Respawn a car to the nearest point on the road.
+   * Finds the closest point on any waypoint segment and places the car there,
+   * facing toward the next waypoint.
+   */
+  private respawnCarToRoad(car: Car): void {
+    const wps = this.track.waypoints;
+    let bestDist = Infinity;
+    let bestX = car.x;
+    let bestY = car.y;
+    let bestSegIdx = 0;
+
+    for (let i = 0; i < wps.length; i++) {
+      const a = wps[i];
+      const b = wps[(i + 1) % wps.length];
+      const proj = this.closestPointOnSegment(car.x, car.y, a.x, a.y, b.x, b.y);
+      const d = distance(car.x, car.y, proj.x, proj.y);
+      if (d < bestDist) {
+        bestDist = d;
+        bestX = proj.x;
+        bestY = proj.y;
+        bestSegIdx = i;
+      }
+    }
+
+    // Place car on road, facing toward the next waypoint
+    const nextWpIdx = (bestSegIdx + 1) % wps.length;
+    const nextWp = wps[nextWpIdx];
+    const faceAngle = angleTo(bestX, bestY, nextWp.x, nextWp.y);
+
+    car.x = bestX;
+    car.y = bestY;
+    car.behavior.speed = 0;
+    car.behavior.motionAngle = faceAngle;
+    car.behavior.facingAngle = faceAngle;
+    car.onGrass = false;
+    car.grassTimer = 0;
+    car.wayPoint = nextWpIdx;
+    car.deactivateBooster();
+  }
+
+  /** Return the closest point on segment (ax,ay)-(bx,by) to point (px,py) */
+  private closestPointOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): { x: number; y: number } {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return { x: ax, y: ay };
+    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return { x: ax + t * dx, y: ay + t * dy };
+  }
+
   /** Distance from point (px,py) to line segment (ax,ay)-(bx,by) */
   private distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
     const dx = bx - ax;
@@ -402,14 +535,14 @@ export class Game {
 
     if (collision) {
       // Real F1 wall hit: car stops dead, driver must reverse out manually
-      // 1. Kill all speed — no bouncing
-      car.behavior.speed = 0;
+      // Only kill speed if car is moving forward (into the wall).
+      // If already reversing (negative speed), let the car escape.
+      if (car.behavior.speed > 0) {
+        car.behavior.speed = 0;
+      }
 
-      // 2. Keep car's current facing direction (don't bounce)
-      // motionAngle and facingAngle stay as they were
-
-      // 3. Push car out of the wall so it doesn't clip
-      const pushDist = collision.depth + 2;
+      // Push car out of the wall so it doesn't clip
+      const pushDist = collision.depth + 4;
       car.x += collision.nx * pushDist;
       car.y += collision.ny * pushDist;
 
@@ -459,6 +592,101 @@ export class Game {
 
   private render(): void {
     this.renderer.render(this.track, this.cars, this.raceManager.getState());
+  }
+
+  private renderMenu(): void {
+    this.renderer.renderMenu(this.menuState);
+  }
+
+  // ==================== MENU SYSTEM ====================
+
+  private attachMenuHandlers(): void {
+    this.menuClickHandler = (e: MouseEvent) => this.handleMenuClick(e.clientX, e.clientY);
+    this.menuTouchHandler = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        e.preventDefault();
+        this.handleMenuClick(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    this.canvas.addEventListener('click', this.menuClickHandler);
+    this.canvas.addEventListener('touchstart', this.menuTouchHandler, { passive: false });
+  }
+
+  private detachMenuHandlers(): void {
+    if (this.menuClickHandler) {
+      this.canvas.removeEventListener('click', this.menuClickHandler);
+      this.menuClickHandler = null;
+    }
+    if (this.menuTouchHandler) {
+      this.canvas.removeEventListener('touchstart', this.menuTouchHandler);
+      this.menuTouchHandler = null;
+    }
+  }
+
+  private handleMenuClick(clientX: number, clientY: number): void {
+    if (this.menuState.gamePhase !== 'menu') return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+    const scaleX = cw / rect.width;
+    const scaleY = ch / rect.height;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
+    const buttons = this.renderer.getMenuButtons(this.menuState, cw, ch);
+    for (const btn of buttons) {
+      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        this.onMenuButton(btn.id);
+        return;
+      }
+    }
+  }
+
+  private onMenuButton(id: string): void {
+    switch (id) {
+      case 'play':
+        this.menuState.screen = 'play';
+        break;
+      case 'rankings':
+        this.menuState.screen = 'rankings';
+        break;
+      case 'settings':
+        this.menuState.screen = 'settings';
+        break;
+      case 'back':
+        this.menuState.screen = 'main';
+        break;
+      case 'play_bots':
+        this.startRace(false);
+        break;
+      case 'play_solo':
+        this.startRace(true);
+        break;
+    }
+  }
+
+  private loadBestTimes(): void {
+    try {
+      const data = localStorage.getItem('formula-racers-best-times');
+      if (data) {
+        this.menuState.bestTimes = JSON.parse(data);
+      }
+    } catch {
+      this.menuState.bestTimes = [];
+    }
+  }
+
+  private saveBestTime(position: number, time: number): void {
+    this.menuState.bestTimes.push({ position, time });
+    // Keep only the best 10 by time
+    this.menuState.bestTimes.sort((a, b) => a.time - b.time);
+    this.menuState.bestTimes = this.menuState.bestTimes.slice(0, 10);
+    try {
+      localStorage.setItem('formula-racers-best-times', JSON.stringify(this.menuState.bestTimes));
+    } catch {
+      // localStorage not available
+    }
   }
 
   // ==================== CANVAS MANAGEMENT ====================

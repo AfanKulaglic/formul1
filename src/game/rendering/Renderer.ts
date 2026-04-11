@@ -15,12 +15,13 @@ import { Car } from '../entities/Car';
 import { TrackData, Rect } from '../data/track0';
 import { RaceState } from '../systems/RaceManager';
 import { TEAMS } from '../data/gameConfig';
+import type { MenuState } from '../Game';
 
 const COLORS = {
   grass: '#2b8a3e',
   grassDark: '#237032',
-  road: '#3c3c3c',
-  roadEdge: '#2d2d2d',
+  road: '#505050',
+  roadEdge: '#404040',
   roadLine: 'rgba(255,255,255,0.7)',
   blueCurb: '#2266cc',
   curbRed: '#cc2222',
@@ -55,6 +56,7 @@ export class Renderer {
   private sponsorImages: HTMLImageElement[] = [];
   private sponsorImagesLoaded = false;
   private sponsorOnFormulaImg: HTMLImageElement | null = null;
+  private carlsbergImg: HTMLImageElement | null = null;
   private speedLines: { x: number; y: number; len: number; alpha: number }[] = [];
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
@@ -82,6 +84,10 @@ export class Renderer {
     const formulaSponsor = new Image();
     formulaSponsor.src = '/sponsors/sponsorOnFormula.png';
     formulaSponsor.onload = () => { this.sponsorOnFormulaImg = formulaSponsor; };
+    // Load Carlsberg logo for leaderboard header
+    const carlsberg = new Image();
+    carlsberg.src = '/sponsors/carlsberg.png';
+    carlsberg.onload = () => { this.carlsbergImg = carlsberg; };
   }
 
   /** Set the input manager so the renderer can draw mobile controls */
@@ -2217,42 +2223,12 @@ export class Renderer {
     }
 
     // --- Race time (top-center) ---
-    const timeW = 140 * scale;
-    const timeX = cw / 2 - timeW / 2;
-    ctx.save();
-    drawGlassPanel(timeX, topBarY, timeW, topBarH, topBarR);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${24 * scale}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.formatTime(state.raceTime), cw / 2, topBarY + topBarH / 2);
-    ctx.restore();
-
-    // --- Lap display (left of minimap) ---
-    const lapW = 90 * scale;
-    const minimapSize = 150 * scale;
-    const minimapX = cw - topPad - minimapSize;
-    const lapX = minimapX - lapW - 8 * scale;
-    ctx.save();
-    drawGlassPanel(lapX, topBarY, lapW, topBarH, topBarR);
-
-    // "LAP" label
-    ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.font = `${14 * scale}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('LAP', lapX + lapW / 2, topBarY + 8 * scale);
-
-    // Lap count
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${26 * scale}px monospace`;
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(`${state.playerLap}/${state.totalLaps}`, lapX + lapW / 2, topBarY + topBarH - 6 * scale);
-    ctx.restore();
+    // (moved below minimap — rendered after minimap)
 
     // --- Minimap (top-right, glassmorphic) ---
-    const mmX = minimapX;
+    const isMobile = !!this.input?.isMobile;
+    const minimapSize = isMobile ? 210 * scale : 150 * scale;
+    const mmX = cw - topPad - minimapSize;
     const mmY = topBarY;
     const mmW = minimapSize;
     const mmH = minimapSize;
@@ -2326,6 +2302,21 @@ export class Renderer {
 
     ctx.restore();
 
+    // --- Race time (below minimap, same width) ---
+    const timeW = mmW;
+    const timeH = topBarH;
+    const timeX = mmX;
+    const timeY = mmY + mmH + 6 * scale;
+    ctx.save();
+    drawGlassPanel(timeX, timeY, timeW, timeH, topBarR);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${24 * scale}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.formatTime(state.raceTime), timeX + timeW / 2, timeY + timeH / 2);
+    ctx.restore();
+
     // --- Drift indicator ---
     if (player.driftAngle > 0.2) {
       ctx.save();
@@ -2362,85 +2353,57 @@ export class Renderer {
     const scaleX = cw / rect.width;
     const scaleY = ch / rect.height;
 
-    // --- Draw vertical steering slider ---
-    const drawSteerSlider = (
+    // --- Draw steering button (racing style) ---
+    const drawSteerButton = (
       bx: number, by: number, bw: number, bh: number,
       direction: 'left' | 'right', pressed: boolean
     ) => {
       ctx.save();
       const x = bx; const y = by; const w = bw; const h = bh;
-      const r = 24 * scaleX;
+      const r = 18 * scaleX;
 
-      // Outer glass panel
+      // Rounded glass panel
       const grad = ctx.createLinearGradient(x, y, x, y + h);
       if (pressed) {
-        grad.addColorStop(0, 'rgba(255, 255, 255, 0.30)');
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0.12)');
       } else {
-        grad.addColorStop(0, 'rgba(0, 0, 0, 0.40)');
-        grad.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+        grad.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0.50)');
       }
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.roundRect(x, y, w, h, r);
       ctx.fill();
 
-      // Border glow
-      ctx.strokeStyle = pressed ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.12)';
-      ctx.lineWidth = 2 * scaleX;
+      // Border
+      ctx.strokeStyle = pressed ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.10)';
+      ctx.lineWidth = 1.5 * scaleX;
       ctx.beginPath();
       ctx.roundRect(x, y, w, h, r);
       ctx.stroke();
 
-      // Inner track groove
-      const trackW = 6 * scaleX;
-      const trackH = h * 0.55;
-      const trackX = x + (w - trackW) / 2;
-      const trackY = y + (h - trackH) / 2;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.beginPath();
-      ctx.roundRect(trackX, trackY, trackW, trackH, trackW / 2);
-      ctx.fill();
+      // Large arrow chevron centered
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const arrowW = 16 * scaleX;
+      const arrowH = 22 * scaleX;
 
-      // Slider knob (moves slightly when pressed)
-      const knobR = 14 * scaleX;
-      const knobCx = x + w / 2;
-      const knobCy = y + h / 2 + (pressed ? -12 * scaleY : 0);
-      const knobGrad = ctx.createRadialGradient(knobCx, knobCy - 3 * scaleY, 0, knobCx, knobCy, knobR);
-      knobGrad.addColorStop(0, pressed ? '#ffffff' : 'rgba(255,255,255,0.9)');
-      knobGrad.addColorStop(1, pressed ? 'rgba(200,200,200,0.8)' : 'rgba(180,180,180,0.5)');
-      ctx.fillStyle = knobGrad;
-      ctx.beginPath();
-      ctx.arc(knobCx, knobCy, knobR, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 1.5 * scaleX;
-      ctx.stroke();
-
-      // Arrow chevron on the knob
-      const arrowSz = 7 * scaleX;
-      ctx.strokeStyle = pressed ? '#333' : 'rgba(60,60,60,0.8)';
-      ctx.lineWidth = 2.5 * scaleX;
+      ctx.strokeStyle = pressed ? '#ffffff' : 'rgba(255,255,255,0.50)';
+      ctx.lineWidth = 4 * scaleX;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
       if (direction === 'left') {
-        ctx.moveTo(knobCx + arrowSz * 0.3, knobCy - arrowSz * 0.5);
-        ctx.lineTo(knobCx - arrowSz * 0.4, knobCy);
-        ctx.lineTo(knobCx + arrowSz * 0.3, knobCy + arrowSz * 0.5);
+        ctx.moveTo(cx + arrowW * 0.4, cy - arrowH * 0.5);
+        ctx.lineTo(cx - arrowW * 0.4, cy);
+        ctx.lineTo(cx + arrowW * 0.4, cy + arrowH * 0.5);
       } else {
-        ctx.moveTo(knobCx - arrowSz * 0.3, knobCy - arrowSz * 0.5);
-        ctx.lineTo(knobCx + arrowSz * 0.4, knobCy);
-        ctx.lineTo(knobCx - arrowSz * 0.3, knobCy + arrowSz * 0.5);
+        ctx.moveTo(cx - arrowW * 0.4, cy - arrowH * 0.5);
+        ctx.lineTo(cx + arrowW * 0.4, cy);
+        ctx.lineTo(cx - arrowW * 0.4, cy + arrowH * 0.5);
       }
       ctx.stroke();
-
-      // Direction label
-      ctx.fillStyle = pressed ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)';
-      ctx.font = `bold ${11 * scaleX}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(direction === 'left' ? 'L' : 'R', x + w / 2, y + h - 10 * scaleY);
 
       ctx.restore();
     };
@@ -2485,13 +2448,13 @@ export class Renderer {
       ctx.restore();
     };
 
-    // Draw left slider
-    drawSteerSlider(
+    // Draw left button
+    drawSteerButton(
       lb.x * scaleX, lb.y * scaleY, lb.w * scaleX, lb.h * scaleY,
       'left', this.input.leftPressed
     );
-    // Draw right slider
-    drawSteerSlider(
+    // Draw right button
+    drawSteerButton(
       rb.x * scaleX, rb.y * scaleY, rb.w * scaleX, rb.h * scaleY,
       'right', this.input.rightPressed
     );
@@ -2570,55 +2533,128 @@ export class Renderer {
     const { ctx } = this;
     const scale = cw / 1080;
 
-    // Dim overlay
+    // Subtle dim overlay — not too dark
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = 'rgba(0,0,0,0.20)';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Traffic light housing
-    const lx = cw / 2;
-    const ly = ch * 0.28;
-    const lr = 28 * scale;
-    const gap = 76 * scale;
-    const hW = 90 * scale;
-    const hH = gap * 3 + 30 * scale;
+    // --- F1-style glassmorphic semaphore panel ---
+    const lightR = 36 * scale;       // light radius
+    const lightGap = 20 * scale;     // gap between lights
+    const lightDiameter = lightR * 2;
+    const numLights = 5;             // F1 uses 5 lights
+    const panelPadX = 30 * scale;
+    const panelPadY = 28 * scale;
+    const panelW = numLights * lightDiameter + (numLights - 1) * lightGap + panelPadX * 2;
+    const panelH = lightDiameter + panelPadY * 2;
+    const panelX = (cw - panelW) / 2;
+    const panelY = ch * 0.22;
+    const cornerR = 20 * scale;
 
-    ctx.fillStyle = '#1a1a1a';
-    this.drawRoundRect(lx - hW / 2, ly - 12 * scale, hW, hH, 10 * scale);
-    ctx.strokeStyle = '#555555';
+    // Glass background
+    const grad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    grad.addColorStop(0, 'rgba(10, 10, 20, 0.75)');
+    grad.addColorStop(1, 'rgba(5, 5, 15, 0.85)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, cornerR);
+    ctx.fill();
+
+    // Border glow
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 2 * scale;
-    ctx.strokeRect(lx - hW / 2, ly - 12 * scale, hW, hH);
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, cornerR);
+    ctx.stroke();
 
-    const circleY = [ly + gap * 0.5, ly + gap * 1.5, ly + gap * 2.5];
+    // Inner subtle highlight at top
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(panelX + 3 * scale, panelY + 3 * scale, panelW - 6 * scale, panelH - 6 * scale, cornerR - 2 * scale);
+    ctx.stroke();
+
+    // --- F1 horizontal lights (5 lights: 4→1red, 3→2red, 2→3red, 1→4red, 0→all green) ---
     const isGo = state.countdownValue === 0;
+    const litCount = isGo ? 0 : (5 - state.countdownValue); // 4→1, 3→2, 2→3, 1→4 reds
 
-    for (let i = 0; i < 3; i++) {
-      // Dark circle background
+    for (let i = 0; i < numLights; i++) {
+      const cx = panelX + panelPadX + lightR + i * (lightDiameter + lightGap);
+      const cy = panelY + panelPadY + lightR;
+
+      // Dark socket ring
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, lightR + 3 * scale, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Socket inner
       ctx.fillStyle = '#0a0a0a';
       ctx.beginPath();
-      ctx.arc(lx, circleY[i], lr, 0, Math.PI * 2);
+      ctx.arc(cx, cy, lightR, 0, Math.PI * 2);
       ctx.fill();
 
-      const lit = isGo || i < (4 - state.countdownValue);
-      ctx.fillStyle = isGo ? (lit ? '#44ff44' : '#0a220a') : (lit ? '#ff2222' : '#220a0a');
+      // Light state
+      let lit: boolean;
+      if (isGo) {
+        lit = true; // all green
+      } else {
+        // F1 style: lights come on progressively
+        // countdownValue 3 = 1 red, 2 = 2 red, 1 = 3 red, 0 = all green
+        lit = i < litCount;
+      }
+
+      const litColor = isGo ? '#00e800' : '#e81000';
+      const dimColor = isGo ? '#002800' : '#1a0500';
+
+      // Light bulb
+      ctx.fillStyle = lit ? litColor : dimColor;
       ctx.save();
       if (lit) {
-        ctx.shadowColor = isGo ? '#44ff44' : '#ff2222';
-        ctx.shadowBlur = 18 * scale;
+        ctx.shadowColor = isGo ? '#00ff00' : '#ff2200';
+        ctx.shadowBlur = 25 * scale;
       }
       ctx.beginPath();
-      ctx.arc(lx, circleY[i], lr * 0.82, 0, Math.PI * 2);
+      ctx.arc(cx, cy, lightR * 0.78, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+
+      // Glossy highlight on lit bulbs
+      if (lit) {
+        const hlGrad = ctx.createRadialGradient(
+          cx - lightR * 0.2, cy - lightR * 0.25, 0,
+          cx, cy, lightR * 0.78
+        );
+        hlGrad.addColorStop(0, 'rgba(255,255,255,0.35)');
+        hlGrad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+        hlGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hlGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, lightR * 0.78, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
+    // --- "GO!" text below panel ---
     if (isGo) {
-      ctx.fillStyle = '#44ff44';
-      ctx.font = `bold ${90 * scale}px sans-serif`;
+      ctx.save();
+      ctx.shadowColor = '#00ff00';
+      ctx.shadowBlur = 30 * scale;
+      ctx.fillStyle = '#00e800';
+      ctx.font = `bold ${80 * scale}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('GO!', cw / 2, ly + hH + 50 * scale);
+      ctx.fillText('GO!', cw / 2, panelY + panelH + 60 * scale);
+      ctx.restore();
+    } else if (state.countdownValue <= 4 && state.countdownValue >= 1) {
+      // Show countdown number subtly
+      ctx.fillStyle = 'rgba(255,255,255,0.30)';
+      ctx.font = `bold ${50 * scale}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${state.countdownValue}`, cw / 2, panelY + panelH + 50 * scale);
     }
+
     ctx.restore();
   }
 
@@ -2790,12 +2826,21 @@ export class Renderer {
     ctx.roundRect(panelX + 10 * scale, panelY + 9 * scale, 4 * scale, headerH - 18 * scale, 2 * scale);
     ctx.fill();
 
-    // "RACE" title
+    // Carlsberg logo + "RACE" title
+    let raceTextX = panelX + 24 * scale;
+    if (this.carlsbergImg) {
+      const logoH = headerH * 0.85;
+      const logoW = logoH * (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
+      const logoX = panelX + 12 * scale;
+      const logoY = panelY + (headerH - logoH) / 2;
+      ctx.drawImage(this.carlsbergImg, logoX, logoY, logoW, logoH);
+      raceTextX = logoX + logoW - 10 * scale;
+    }
     ctx.fillStyle = '#ffffff';
     ctx.font = `bold ${26 * scale}px sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('RACE', panelX + 24 * scale, panelY + headerH / 2);
+    ctx.fillText('Race', raceTextX, panelY + headerH / 2);
 
     // "LAP X/Y" on the right
     ctx.fillStyle = 'rgba(255,255,255,0.50)';
@@ -2874,6 +2919,324 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+  // ==================== MENU RENDERING ====================
+
+  /** Returns clickable button regions for the current menu screen */
+  getMenuButtons(menuState: MenuState, cw: number, ch: number): { id: string; x: number; y: number; w: number; h: number }[] {
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
+    const btnW = 420 * scale;
+    const btnH = 72 * scale;
+    const btnX = (cw - btnW) / 2;
+    const centerY = ch * 0.42;
+    const gap = 20 * scale;
+
+    if (menuState.screen === 'main') {
+      return [
+        { id: 'play', x: btnX, y: centerY, w: btnW, h: btnH },
+        { id: 'rankings', x: btnX, y: centerY + btnH + gap, w: btnW, h: btnH },
+        { id: 'settings', x: btnX, y: centerY + (btnH + gap) * 2, w: btnW, h: btnH },
+      ];
+    } else if (menuState.screen === 'play') {
+      return [
+        { id: 'play_bots', x: btnX, y: centerY, w: btnW, h: btnH },
+        { id: 'play_solo', x: btnX, y: centerY + btnH + gap, w: btnW, h: btnH },
+        { id: 'back', x: btnX, y: centerY + (btnH + gap) * 2, w: btnW, h: btnH },
+      ];
+    } else if (menuState.screen === 'rankings' || menuState.screen === 'settings') {
+      // Back button at bottom
+      const backY = ch * 0.82;
+      return [
+        { id: 'back', x: btnX, y: backY, w: btnW, h: btnH },
+      ];
+    }
+    return [];
+  }
+
+  /** Render the full menu screen */
+  renderMenu(menuState: MenuState): void {
+    const { ctx } = this;
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
+
+    // Background
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, ch);
+    bgGrad.addColorStop(0, '#1a4a2a');
+    bgGrad.addColorStop(0.5, '#1e5630');
+    bgGrad.addColorStop(1, '#153d22');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, cw, ch);
+
+    // Subtle grid pattern
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    const gridStep = 60 * scale;
+    for (let gx = 0; gx < cw; gx += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, ch);
+      ctx.stroke();
+    }
+    for (let gy = 0; gy < ch; gy += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(0, gy);
+      ctx.lineTo(cw, gy);
+      ctx.stroke();
+    }
+
+    // Red accent line at top
+    ctx.fillStyle = '#e10600';
+    ctx.fillRect(0, 0, cw, 4 * scale);
+
+    // Title area
+    const titleY = ch * 0.12;
+    const titleScale = isMobile ? cw / 700 : scale;
+    
+    // Carlsberg logo in title if available
+    if (this.carlsbergImg) {
+      const logoH = 70 * titleScale;
+      const logoW = logoH * (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
+      ctx.drawImage(this.carlsbergImg, (cw - logoW) / 2, titleY - 15 * titleScale, logoW, logoH);
+    }
+
+    // Game title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${56 * titleScale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('FORMULA RACERS', cw / 2, titleY + 80 * titleScale);
+
+    // Subtitle
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = `${20 * titleScale}px sans-serif`;
+    ctx.fillText('RACING CHAMPIONSHIP', cw / 2, titleY + 120 * titleScale);
+
+    // Render current screen
+    switch (menuState.screen) {
+      case 'main':
+        this.renderMainMenu(menuState, cw, ch, scale);
+        break;
+      case 'play':
+        this.renderPlayMenu(menuState, cw, ch, scale);
+        break;
+      case 'rankings':
+        this.renderRankingsScreen(menuState, cw, ch, scale);
+        break;
+      case 'settings':
+        this.renderSettingsScreen(menuState, cw, ch, scale);
+        break;
+    }
+  }
+
+  private renderMenuButton(
+    x: number, y: number, w: number, h: number,
+    label: string, scale: number,
+    accent?: string
+  ): void {
+    const { ctx } = this;
+    const r = 16 * scale;
+
+    // Glass background
+    const grad = ctx.createLinearGradient(x, y, x, y + h);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.03)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.stroke();
+
+    // Left accent bar
+    if (accent) {
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.roundRect(x + 8 * scale, y + 12 * scale, 4 * scale, h - 24 * scale, 2 * scale);
+      ctx.fill();
+    }
+
+    // Label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${26 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + w / 2, y + h / 2);
+  }
+
+  private renderMainMenu(_menuState: MenuState, cw: number, ch: number, scale: number): void {
+    const buttons = this.getMenuButtons({ screen: 'main', gamePhase: 'menu', bestTimes: [], soloMode: false }, cw, ch);
+    const labels = ['PLAY', 'RANKINGS', 'SETTINGS'];
+    const accents = ['#e10600', '#ffd700', '#4488cc'];
+
+    for (let i = 0; i < buttons.length; i++) {
+      const b = buttons[i];
+      this.renderMenuButton(b.x, b.y, b.w, b.h, labels[i], scale, accents[i]);
+    }
+
+    // Footer
+    this.ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    this.ctx.font = `${14 * scale}px sans-serif`;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'bottom';
+    this.ctx.fillText('v1.0 — Tap to select', cw / 2, ch - 20 * scale);
+  }
+
+  private renderPlayMenu(_menuState: MenuState, cw: number, ch: number, scale: number): void {
+    // Subtitle
+    this.ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    this.ctx.font = `${22 * scale}px sans-serif`;
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('Choose Race Mode', cw / 2, ch * 0.35);
+
+    const buttons = this.getMenuButtons({ screen: 'play', gamePhase: 'menu', bestTimes: [], soloMode: false }, cw, ch);
+    const labels = ['RACE WITH BOTS', 'SOLO TIME TRIAL', '← BACK'];
+    const accents = ['#e10600', '#00cc66', 'rgba(255,255,255,0.2)'];
+
+    for (let i = 0; i < buttons.length; i++) {
+      const b = buttons[i];
+      this.renderMenuButton(b.x, b.y, b.w, b.h, labels[i], scale, accents[i]);
+    }
+  }
+
+  private renderRankingsScreen(menuState: MenuState, cw: number, _ch: number, scale: number): void {
+    const { ctx } = this;
+    const ch = _ch;
+
+    // Rankings panel
+    const panelW = 500 * scale;
+    const panelH = 420 * scale;
+    const panelX = (cw - panelW) / 2;
+    const panelY = ch * 0.28;
+    const panelR = 16 * scale;
+
+    // Glass panel
+    const grad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.06)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.stroke();
+
+    // Header
+    ctx.fillStyle = '#ffd700';
+    ctx.font = `bold ${28 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('BEST TIMES', cw / 2, panelY + 35 * scale);
+
+    // Separator
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX + 20 * scale, panelY + 60 * scale);
+    ctx.lineTo(panelX + panelW - 20 * scale, panelY + 60 * scale);
+    ctx.stroke();
+
+    // Entries
+    const times = menuState.bestTimes;
+    if (times.length === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.30)';
+      ctx.font = `${20 * scale}px sans-serif`;
+      ctx.fillText('No races completed yet', cw / 2, panelY + panelH / 2);
+    } else {
+      const rowH = 36 * scale;
+      const startY = panelY + 80 * scale;
+      for (let i = 0; i < Math.min(times.length, 8); i++) {
+        const ry = startY + i * rowH;
+        const entry = times[i];
+
+        // Rank
+        ctx.fillStyle = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'rgba(255,255,255,0.5)';
+        ctx.font = `bold ${22 * scale}px monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${i + 1}.`, panelX + 30 * scale, ry);
+
+        // Position achieved
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.font = `${18 * scale}px sans-serif`;
+        ctx.fillText(`P${entry.position}`, panelX + 70 * scale, ry);
+
+        // Time
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${22 * scale}px monospace`;
+        ctx.textAlign = 'right';
+        ctx.fillText(this.formatTime(entry.time), panelX + panelW - 30 * scale, ry);
+      }
+    }
+
+    // Back button
+    const buttons = this.getMenuButtons(menuState, cw, ch);
+    for (const b of buttons) {
+      this.renderMenuButton(b.x, b.y, b.w, b.h, '← BACK', scale, 'rgba(255,255,255,0.2)');
+    }
+  }
+
+  private renderSettingsScreen(_menuState: MenuState, cw: number, ch: number, scale: number): void {
+    const { ctx } = this;
+
+    // Settings panel
+    const panelW = 500 * scale;
+    const panelH = 300 * scale;
+    const panelX = (cw - panelW) / 2;
+    const panelY = ch * 0.32;
+    const panelR = 16 * scale;
+
+    // Glass panel
+    const grad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.06)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.stroke();
+
+    // Header
+    ctx.fillStyle = '#4488cc';
+    ctx.font = `bold ${28 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SETTINGS', cw / 2, panelY + 35 * scale);
+
+    // Separator
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX + 20 * scale, panelY + 60 * scale);
+    ctx.lineTo(panelX + panelW - 20 * scale, panelY + 60 * scale);
+    ctx.stroke();
+
+    // Placeholder content
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = `${20 * scale}px sans-serif`;
+    ctx.fillText('Coming soon...', cw / 2, panelY + panelH / 2);
+
+    // Back button
+    const buttons = this.getMenuButtons(_menuState, cw, ch);
+    for (const b of buttons) {
+      this.renderMenuButton(b.x, b.y, b.w, b.h, '← BACK', scale, 'rgba(255,255,255,0.2)');
+    }
   }
 
   // ==================== UTILITIES ====================

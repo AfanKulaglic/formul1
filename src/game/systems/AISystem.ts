@@ -100,15 +100,12 @@ export class AISystem {
     const recovery = getRecovery(car);
     const speed = Math.abs(car.behavior.speed);
 
-    // Detect stuck: speed near zero for a sustained period
-    if (speed < 15) {
-      recovery.stuckTimer += dt;
-    } else {
-      recovery.stuckTimer = 0;
-      if (recovery.phase !== 'none') {
-        // Car is moving again, end recovery
-        recovery.phase = 'none';
-        recovery.timer = 0;
+    // Only track stuck state when NOT already recovering
+    if (recovery.phase === 'none') {
+      if (speed < 15) {
+        recovery.stuckTimer += dt;
+      } else {
+        recovery.stuckTimer = 0;
       }
     }
 
@@ -118,7 +115,6 @@ export class AISystem {
       recovery.timer = 0;
       // Choose reverse steer direction: steer toward the next waypoint
       const angleToWP = angleTo(car.x, car.y, wp.x, wp.y);
-      const diff = angleDifference(car.angle, angleToWP);
       // When reversing, steer opposite to align front toward WP
       recovery.reverseSteerDir = isClockwise(angleToWP, car.angle) ? -1 : 1;
     }
@@ -126,14 +122,15 @@ export class AISystem {
     // Execute recovery phases
     if (recovery.phase === 'reverse') {
       recovery.timer += dt;
-      // Reverse with slight steering for 0.6–1.0s
-      car.behavior.simulateControl(3); // backward/brake
+      // Reverse with steering to pull away from the wall
+      car.behavior.simulateControl(3); // backward/reverse
       if (recovery.reverseSteerDir < 0) {
         car.behavior.simulateControl(0); // left
       } else {
         car.behavior.simulateControl(1); // right
       }
-      if (recovery.timer > 0.8) {
+      // Reverse for 1.0s then switch to align
+      if (recovery.timer > 1.0) {
         recovery.phase = 'align';
         recovery.timer = 0;
       }
@@ -153,8 +150,8 @@ export class AISystem {
           car.behavior.simulateControl(0);
         }
       }
-      // Exit align phase after 0.5s or when mostly aligned
-      if (recovery.timer > 0.5 || diff < 0.1) {
+      // Exit align phase after 0.8s or when mostly aligned and moving
+      if (recovery.timer > 0.8 || (diff < 0.1 && speed > 30)) {
         recovery.phase = 'none';
         recovery.timer = 0;
         recovery.stuckTimer = 0;
