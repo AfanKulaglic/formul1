@@ -55,6 +55,7 @@ export class Renderer {
   private sponsorImages: HTMLImageElement[] = [];
   private sponsorImagesLoaded = false;
   private sponsorOnFormulaImg: HTMLImageElement | null = null;
+  private speedLines: { x: number; y: number; len: number; alpha: number }[] = [];
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     this.canvas = canvas;
@@ -117,6 +118,12 @@ export class Renderer {
     this.renderBridges(track);
 
     ctx.restore();
+
+    // === SPEED LINES (screen-space, drawn before HUD) ===
+    const player = cars.find(c => c.isPlayer);
+    if (player) {
+      this.renderSpeedLines(player, cw, ch);
+    }
 
     // === SCREEN SPACE (HUD) ===
     this.renderHUD(raceState, cars, cw, ch, track);
@@ -671,74 +678,121 @@ export class Renderer {
     const w = Math.abs(fence.w);
     const h = Math.abs(fence.h);
 
-    // Split height: top half = gray Armco barrier, bottom half = ad panels
-    const barrierH = h * 0.5;
-    const adH = h * 0.5;
-    const barrierY = -h / 2;
-    const adY = -h / 2 + barrierH;
+    // Overlap edges so adjacent segments connect without gaps
+    const ext = 8;
+    const ew = w + ext * 2;
+    const exL = -w / 2 - ext;
 
-    // ===== GRAY ARMCO BARRIER (track side) =====
-    ctx.fillStyle = '#b8bcc4';
-    ctx.fillRect(-w / 2, barrierY, w, barrierH);
-    ctx.fillStyle = 'rgba(0,0,0,0.08)';
-    ctx.fillRect(-w / 2, barrierY, w, barrierH * 0.2);
+    // Layout: wall (upper ~55%) + ad panels (lower ~45%)
+    const wallH = h * 0.55;
+    const adH = h * 0.45;
+    const wallY = -h / 2;
+    const adY = wallY + wallH;
 
-    // Horizontal rails
-    ctx.strokeStyle = '#8a8e96';
-    ctx.lineWidth = 1.5;
-    for (let r = 1; r < 3; r++) {
-      const ry = barrierY + (barrierH / 3) * r;
-      ctx.beginPath(); ctx.moveTo(-w / 2, ry); ctx.lineTo(w / 2, ry); ctx.stroke();
+    // ===== GROUND SHADOW =====
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(exL + 4, h / 2, ew, 6);
+
+    // ===== MAIN CONCRETE WALL =====
+    // Smooth gradient wall face
+    const wallGrad = ctx.createLinearGradient(0, wallY, 0, wallY + wallH);
+    wallGrad.addColorStop(0, '#e0e1e6');
+    wallGrad.addColorStop(0.05, '#d6d7dc');
+    wallGrad.addColorStop(0.5, '#cdced3');
+    wallGrad.addColorStop(0.95, '#c2c3c8');
+    wallGrad.addColorStop(1, '#b5b6bb');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(exL, wallY, ew, wallH);
+
+    // Vertical posts — integrated concrete pillars with soft inset look
+    const postSpacing = Math.max(55, Math.min(75, w / Math.max(3, Math.floor(w / 65))));
+    const postW = 7;
+    for (let px = exL + postSpacing / 2; px < exL + ew; px += postSpacing) {
+      // Subtle inset shadow left
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
+      ctx.fillRect(px - postW / 2 - 1, wallY + 2, 1, wallH - 4);
+      // Post face — slightly lighter than wall
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(px - postW / 2, wallY + 2, postW, wallH - 4);
+      // Subtle inset shadow right
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      ctx.fillRect(px + postW / 2, wallY + 2, 1, wallH - 4);
     }
 
-    // Vertical posts
-    const postSpacing = Math.max(40, Math.min(60, w / Math.max(4, Math.floor(w / 50))));
-    ctx.fillStyle = '#9a9ea8';
-    ctx.strokeStyle = '#7a7e86';
+    // Horizontal grooves — subtle recessed lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
     ctx.lineWidth = 1;
-    for (let px = -w / 2 + postSpacing; px < w / 2; px += postSpacing) {
-      ctx.fillRect(px - 2.5, barrierY + 1, 5, barrierH - 2);
-      ctx.strokeRect(px - 2.5, barrierY + 1, 5, barrierH - 2);
+    const grooveCount = 3;
+    for (let r = 1; r <= grooveCount; r++) {
+      const ry = wallY + (wallH / (grooveCount + 1)) * r;
+      ctx.beginPath();
+      ctx.moveTo(exL, ry);
+      ctx.lineTo(exL + ew, ry);
+      ctx.stroke();
+      // Light line below groove for embossed look
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.moveTo(exL, ry + 1);
+      ctx.lineTo(exL + ew, ry + 1);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.06)';
     }
 
-    // Barrier edges
-    ctx.fillStyle = '#6a6e76';
-    ctx.fillRect(-w / 2, barrierY, w, 1.5);
-    ctx.fillRect(-w / 2, barrierY + barrierH - 1.5, w, 1.5);
+    // === TOP CAP — flat continuous rail ===
+    const capH = 5;
+    const capY = wallY - capH;
+    // Cap gradient
+    const capGrad = ctx.createLinearGradient(0, capY, 0, capY + capH);
+    capGrad.addColorStop(0, '#eeeff2');
+    capGrad.addColorStop(0.4, '#e4e5e9');
+    capGrad.addColorStop(1, '#d2d3d8');
+    ctx.fillStyle = capGrad;
+    ctx.fillRect(exL, capY, ew, capH);
+    // Top highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillRect(exL, capY, ew, 1);
+    // Bottom shadow of cap
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(exL, capY + capH, ew, 1);
 
-    // ===== SPONSOR IMAGE PANELS =====
+    // === BOTTOM EDGE of wall ===
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(exL, wallY + wallH - 1.5, ew, 1.5);
+
+    // ===== SPONSOR IMAGE PANELS (lower half) =====
     const imgIdx = index % 4;
     const img = this.sponsorImages[imgIdx];
     const imgReady = this.sponsorImagesLoaded && img && img.complete && img.naturalWidth > 0;
 
-    // Background fill
+    // Panel background
     ctx.fillStyle = Renderer.FENCE_AD_COLORS[imgIdx];
-    ctx.fillRect(-w / 2, adY, w, adH);
+    ctx.fillRect(exL, adY, ew, adH);
 
-    // Tile the sponsor image across the ad strip
-    // Each tile keeps the image aspect ratio, fitting to adH height
+    // Tile the sponsor image
     if (imgReady) {
       const tileH = adH;
       const tileW = (img.naturalWidth / img.naturalHeight) * tileH;
-      for (let tx = -w / 2; tx < w / 2; tx += tileW) {
-        const drawW = Math.min(tileW, w / 2 - tx);
+      for (let tx = exL; tx < exL + ew; tx += tileW) {
+        const drawW = Math.min(tileW, exL + ew - tx);
         ctx.drawImage(img, 0, 0, (drawW / tileW) * img.naturalWidth, img.naturalHeight, tx, adY, drawW, tileH);
       }
     }
 
-    // Segment dividers for visual separation
+    // Segment dividers on ad panel
     const segW = Math.max(60, Math.min(120, w / Math.max(3, Math.floor(w / 90))));
     const numSegs = Math.max(2, Math.ceil(w / segW));
     const actualSegW = w / numSegs;
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
     for (let s = 1; s < numSegs; s++) {
       ctx.fillRect(-w / 2 + s * actualSegW - 0.5, adY, 1, adH);
     }
 
-    // Ad panel edges
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(-w / 2, adY, w, 1);
-    ctx.fillRect(-w / 2, adY + adH - 1, w, 1);
+    // Ad panel top edge
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(exL, adY, ew, 1);
+    // Ad panel bottom edge + subtle shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(exL, adY + adH - 1, ew, 1);
 
     ctx.restore();
   }
@@ -1527,7 +1581,7 @@ export class Renderer {
     this.drawWheel(ctx, -52 * sx,  28 * sy + swayPx, 30 * sx, 18 * sy, sx, sy, true, speedRatio);
 
     // ===== FRONT WHEELS (narrower, rotate with steering) =====
-    const steerAngle = car.smoothSteer * 0.35; // ~20 degrees max, smoothed for AI visibility
+    const steerAngle = car.smoothSteer * 0.18; // ~10 degrees max, subtle realistic steering
     // Front-left wheel
     {
       const cx = 54 * sx, cy = -37 * sy + swayPx; // wheel center
@@ -2136,26 +2190,31 @@ export class Renderer {
     };
 
     // --- Position display (top-left) ---
-    const posW = 120 * scale;
-    ctx.save();
-    drawGlassPanel(topPad, topBarY, posW, topBarH, topBarR);
+    if (this.input?.isMobile) {
+      // F1-style leaderboard tower on mobile
+      this.renderF1Leaderboard(state, cars, scale, topBarY, topPad, topBarR);
+    } else {
+      const posW = 120 * scale;
+      ctx.save();
+      drawGlassPanel(topPad, topBarY, posW, topBarH, topBarR);
 
-    // Position number
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${34 * scale}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const posCenterX = topPad + posW / 2;
-    const posCenterY = topBarY + topBarH / 2;
-    const posText = `${state.playerPosition}`;
-    const posNumW = ctx.measureText(posText).width;
-    ctx.fillText(posText, posCenterX - 10 * scale, posCenterY);
+      // Position number
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${34 * scale}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const posCenterX = topPad + posW / 2;
+      const posCenterY = topBarY + topBarH / 2;
+      const posText = `${state.playerPosition}`;
+      const posNumW = ctx.measureText(posText).width;
+      ctx.fillText(posText, posCenterX - 10 * scale, posCenterY);
 
-    // "/total" suffix
-    ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.font = `${18 * scale}px sans-serif`;
-    ctx.fillText(`/${this.getCarCount(cars)}`, posCenterX + posNumW / 2 + 4 * scale, posCenterY + 2 * scale);
-    ctx.restore();
+      // "/total" suffix
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.font = `${18 * scale}px sans-serif`;
+      ctx.fillText(`/${this.getCarCount(cars)}`, posCenterX + posNumW / 2 + 4 * scale, posCenterY + 2 * scale);
+      ctx.restore();
+    }
 
     // --- Race time (top-center) ---
     const timeW = 140 * scale;
@@ -2627,6 +2686,192 @@ export class Renderer {
     ctx.fillStyle = '#888888';
     ctx.font = `${22 * scale}px monospace`;
     ctx.fillText('Press SPACE or tap to restart', cw / 2, panelY + panelH + 50 * scale);
+
+    ctx.restore();
+  }
+
+  // ==================== SPEED LINES ====================
+
+  private renderSpeedLines(player: Car, cw: number, ch: number): void {
+    const { ctx } = this;
+    const speedRatio = Math.abs(player.behavior.speed) / player.maxSpeed;
+
+    // Only show speed lines above 60% speed
+    if (speedRatio < 0.6) {
+      this.speedLines = [];
+      return;
+    }
+
+    const intensity = (speedRatio - 0.6) / 0.4; // 0 at 60%, 1 at 100%
+    const lineCount = Math.floor(8 + intensity * 16); // 8-24 lines
+
+    // Spawn new lines if needed
+    while (this.speedLines.length < lineCount) {
+      this.speedLines.push({
+        x: Math.random() * cw,
+        y: Math.random() * ch,
+        len: 40 + Math.random() * 120,
+        alpha: 0.1 + Math.random() * 0.15,
+      });
+    }
+    // Trim excess
+    if (this.speedLines.length > lineCount) {
+      this.speedLines.length = lineCount;
+    }
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    for (const line of this.speedLines) {
+      // Animate: lines move downward (since car faces up on screen)
+      line.y += (8 + intensity * 25);
+      if (line.y > ch + line.len) {
+        line.y = -line.len;
+        line.x = Math.random() * cw;
+        line.len = 40 + Math.random() * 120;
+      }
+
+      // Keep lines to the edges of the screen (not covering center)
+      const centerDist = Math.abs(line.x - cw / 2) / (cw / 2);
+      if (centerDist < 0.3) continue;
+
+      const lineAlpha = line.alpha * intensity * Math.min(centerDist, 1);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(line.x, line.y);
+      ctx.lineTo(line.x, line.y + line.len * intensity);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // ==================== F1 LEADERBOARD (MOBILE) ====================
+
+  private static readonly TEAM_ABBR = [
+    'BLU','PAN','HAM','STL','CRI','AQU','ACC','COG','PET','MAR',
+    'NOV','ECL','THU','TEM','HER','HOR','SHA','TOR',
+  ];
+
+  private renderF1Leaderboard(
+    state: RaceState, cars: Car[], scale: number,
+    topBarY: number, topPad: number, topBarR: number
+  ): void {
+    const { ctx } = this;
+
+    const rowH = 46 * scale;
+    const headerH = 56 * scale;
+    const panelW = 320 * scale;
+    const totalRows = cars.length;
+    const panelH = headerH + rowH * totalRows + 6 * scale;
+    const panelX = topPad;
+    const panelY = topBarY;
+
+    // --- Glass panel background ---
+    ctx.save();
+    const grad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.70)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, topBarR);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, topBarR);
+    ctx.stroke();
+
+    // --- Header ---
+    // Red accent bar (F1 style)
+    ctx.fillStyle = '#e10600';
+    ctx.beginPath();
+    ctx.roundRect(panelX + 10 * scale, panelY + 9 * scale, 4 * scale, headerH - 18 * scale, 2 * scale);
+    ctx.fill();
+
+    // "RACE" title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${26 * scale}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('RACE', panelX + 24 * scale, panelY + headerH / 2);
+
+    // "LAP X/Y" on the right
+    ctx.fillStyle = 'rgba(255,255,255,0.50)';
+    ctx.font = `${18 * scale}px sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(`LAP ${state.playerLap}/${state.totalLaps}`, panelX + panelW - 10 * scale, panelY + headerH / 2);
+
+    // Separator line
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX + 6 * scale, panelY + headerH);
+    ctx.lineTo(panelX + panelW - 6 * scale, panelY + headerH);
+    ctx.stroke();
+
+    // --- Rows — sorted by position ---
+    const sortedCars = state.positions
+      .map(id => cars.find(c => c.id === id)!)
+      .filter(Boolean);
+    const leaderProgress = sortedCars.length > 0 ? sortedCars[0].progress : 0;
+
+    for (let i = 0; i < sortedCars.length; i++) {
+      const car = sortedCars[i];
+      const pos = i + 1;
+      const ry = panelY + headerH + i * rowH;
+      const rowCenterY = ry + rowH / 2;
+
+      // Highlight player row
+      if (car.isPlayer) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.10)';
+        ctx.beginPath();
+        ctx.roundRect(panelX + 4 * scale, ry + 1, panelW - 8 * scale, rowH - 2, 4 * scale);
+        ctx.fill();
+      }
+
+      // Position number — podium colors
+      if (pos === 1) ctx.fillStyle = '#ffd700';
+      else if (pos === 2) ctx.fillStyle = '#c0c0c0';
+      else if (pos === 3) ctx.fillStyle = '#cd7f32';
+      else ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = `bold ${22 * scale}px monospace`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${pos}`, panelX + 38 * scale, rowCenterY);
+
+      // Team color stripe
+      ctx.fillStyle = car.color;
+      ctx.fillRect(panelX + 46 * scale, ry + 9 * scale, 5 * scale, rowH - 18 * scale);
+
+      // Team abbreviation
+      const abbr = Renderer.TEAM_ABBR[car.teamIndex] || 'UNK';
+      ctx.fillStyle = car.isPlayer ? '#ffffff' : 'rgba(255,255,255,0.70)';
+      ctx.font = `bold ${22 * scale}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.fillText(abbr, panelX + 58 * scale, rowCenterY);
+
+      // Gap text
+      ctx.font = `${17 * scale}px sans-serif`;
+      ctx.textAlign = 'right';
+      if (pos === 1) {
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillText('Leader', panelX + panelW - 10 * scale, rowCenterY);
+      } else {
+        const progressGap = leaderProgress - car.progress;
+        // Scale the progress gap to approximate seconds
+        const approxGap = state.raceTime > 0
+          ? (progressGap / leaderProgress) * state.raceTime
+          : 0;
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        if (approxGap < 100) {
+          ctx.fillText(`+${approxGap.toFixed(1)}`, panelX + panelW - 10 * scale, rowCenterY);
+        } else {
+          ctx.fillText('+LAP', panelX + panelW - 10 * scale, rowCenterY);
+        }
+      }
+    }
 
     ctx.restore();
   }

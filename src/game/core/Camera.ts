@@ -36,10 +36,10 @@ export class Camera {
   private baseHeight: number = 2300;  // Approximate Camera3D Z height
 
   // Speed-based zoom
-  private readonly minZoom: number = 0.55;  // At max speed: see road ahead
+  private readonly minZoom: number = 0.42;  // At max speed: pulled out far — speed sensation
   private readonly maxZoom: number = 0.65;  // At zero speed: closer view
   // Mobile gets higher zoom (closer view) so the car fills more screen
-  private readonly mobileMinZoom: number = 1.15;
+  private readonly mobileMinZoom: number = 0.85;
   private readonly mobileMaxZoom: number = 1.40;
 
   /** Whether to use mobile zoom levels */
@@ -48,7 +48,8 @@ export class Camera {
   /** Update camera to follow a target */
   update(targetX: number, targetY: number, targetAngle: number, speed: number, maxSpeed: number, dt: number): void {
     // Offset camera ahead of the car so the player sees more road in front
-    const lookAhead = Math.abs(speed) * 0.35; // pixels ahead based on speed
+    // Higher multiplier = camera looks further ahead at speed → stronger speed feel
+    const lookAhead = Math.abs(speed) * 0.55;
     const aheadX = targetX + Math.cos(targetAngle) * lookAhead;
     const aheadY = targetY + Math.sin(targetAngle) * lookAhead;
 

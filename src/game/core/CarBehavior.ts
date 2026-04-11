@@ -138,10 +138,18 @@ export class CarBehavior {
     // a natural asymptotic top speed that takes a long time on a straight.
     const dragCoeff = this.acceleration / (this.maxSpeed * this.maxSpeed);
 
+    // F1-like traction boost at low speeds: real F1 cars have enormous
+    // grip-limited acceleration out of corners (~2.5g at low speed), tapering
+    // to power-limited as aero drag builds. This gives the "rocket out of
+    // corners" feel without changing top speed.
+    const speedRatio = Math.abs(this.speed) / this.maxSpeed;
+    const tractionBoost = 1 + 1.8 * Math.max(0, 1 - speedRatio * 2.5);
+    // tractionBoost: 2.8x at standstill, ~1.0x above 40% speed
+
     if (forward && !backward) {
       // Engine force minus aerodynamic drag (v²)
       const drag = dragCoeff * this.speed * this.speed;
-      const netAccel = this.acceleration - drag;
+      const netAccel = this.acceleration * tractionBoost - drag;
       this.speed += netAccel * dt;
       // No hard cap — let drag naturally limit speed.
       // When speed > maxSpeed (e.g. after boost ends), drag > engine

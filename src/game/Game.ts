@@ -119,7 +119,7 @@ export class Game {
     // acceleration and deceleration from brakes upgrade
     const playerMaxSpeed = UPGRADE_DEFAULTS.engine.base;   // 850 px/s
     const playerSteer = 35;       // degrees/s (minimal sensitivity)
-    const playerAccel = 220;      // px/s² — low base so drag curve makes 850 take a long time
+    const playerAccel = 380;      // px/s² — F1-like punch, drag curve keeps same top speed
     const playerDecel = 500;      // px/s² (default)
     const playerGrip = UPGRADE_DEFAULTS.grip.base;         // 110
 
@@ -154,7 +154,7 @@ export class Game {
         // AI speed distribution: slightly boosted from original for competitive racing
         const t = (cells.length > 1) ? i / (cells.length - 1) : 0.5;
         const aiMaxSpeed = lerp(1.20 * playerMaxSpeed, 1.20 * playerMaxSpeed, t);
-        const aiSteer = lerp(120, 160, t);  // much lower — fluid turns like player
+        const aiSteer = lerp(45, 65, t);  // closer to player's 35°/s for fluid visible turns
 
         const config: CarConfig = {
           id: i,
@@ -164,7 +164,7 @@ export class Game {
           angle: cell.angle,
           maxSpeed: aiMaxSpeed,
           steerSpeed: aiSteer,
-          acceleration: 220,
+          acceleration: 380,
           deceleration: 500,
           gripThreshold: lerp(80, 130, t),
           teamIndex: i % TEAM_COLORS.length,
@@ -270,13 +270,12 @@ export class Game {
       // With lower steerSpeed (120-160°/s ≈ 2-2.8 rad/s), 1.5 maps well to full lock
       const steerFromTurn = Math.max(-1, Math.min(1, car.angularVelocity / 1.5));
 
-      if (car.isPlayer) {
-        const rawSteer = car.steerDirection;
-        car.smoothSteer += (rawSteer - car.smoothSteer) * Math.min(1, 15 * dt);
-      } else {
-        // AI: fast tracking so wheel movement follows actual cornering tightly
-        car.smoothSteer += (steerFromTurn - car.smoothSteer) * Math.min(1, 10 * dt);
-      }
+      // Both player and AI use steerDirection (set by simulateControl calls)
+      // so front wheels visually turn identically for everyone
+      const rawSteer = car.steerDirection;
+      // Slower smoothing so brief steer inputs produce visible wheel turns
+      const smoothRate = car.isPlayer ? 12 : 6;
+      car.smoothSteer += (rawSteer - car.smoothSteer) * Math.min(1, smoothRate * dt);
       if (Math.abs(car.smoothSteer) < 0.005) car.smoothSteer = 0;
 
       // Suspension sway (body lean) from cornering — for AI cars
@@ -322,6 +321,8 @@ export class Game {
    */
   private applySteerHelp(car: Car, dt: number): void {
     if (car.wayPoint >= this.track.waypoints.length) return;
+    // No steering assist on grass — player has full control off-road
+    if (car.onGrass) return;
     const wp = this.track.waypoints[car.wayPoint];
     const targetAngle = angleTo(car.x, car.y, wp.x, wp.y);
     const diff = angleDifference(car.angle, targetAngle);
@@ -351,7 +352,7 @@ export class Game {
   private applyGrassSlowdown(car: Car, dt: number): void {
     if (car.state !== 'running') return;
     const roadHalf = 280; // ~half road width (520/2 + tolerance)
-    const grassMaxSpeed = 350; // severely limited on grass
+    const grassMaxSpeed = 650; // slightly limited on grass
 
     // Find minimum distance from car to any waypoint segment
     const wps = this.track.waypoints;
@@ -365,12 +366,12 @@ export class Game {
 
     if (minDist > roadHalf) {
       car.onGrass = true;
-      // Drag — slow down exponentially
-      const drag = 1 - 2.5 * dt; // lose ~2.5x per second multiplied
-      car.behavior.speed *= Math.max(drag, 0.5);
-      // Hard cap
+      // Flat deceleration on grass — no multiplicative drag (avoids "magnet" feel)
       if (Math.abs(car.behavior.speed) > grassMaxSpeed) {
-        car.behavior.speed = Math.sign(car.behavior.speed) * grassMaxSpeed;
+        // Gradually slow down toward the grass cap
+        const excess = Math.abs(car.behavior.speed) - grassMaxSpeed;
+        const reduction = Math.min(excess, 200 * dt); // lose up to 200 px/s²
+        car.behavior.speed -= Math.sign(car.behavior.speed) * reduction;
       }
     } else {
       car.onGrass = false;
@@ -400,18 +401,14 @@ export class Game {
     );
 
     if (collision) {
-      // 1. Take absolute speed
-      car.behavior.speed = Math.abs(car.behavior.speed);
+      // Real F1 wall hit: car stops dead, driver must reverse out manually
+      // 1. Kill all speed — no bouncing
+      car.behavior.speed = 0;
 
-      // 2. Apply friction (70% speed loss!)
-      car.behavior.applyFriction();
+      // 2. Keep car's current facing direction (don't bounce)
+      // motionAngle and facingAngle stay as they were
 
-      // 3. Adjust facing angle to bounce off
-      const bounceAngle = Math.atan2(collision.ny, collision.nx);
-      car.behavior.facingAngle = wrapAngle(bounceAngle);
-      car.behavior.motionAngle = wrapAngle(bounceAngle);
-
-      // 4. Push car away from fence
+      // 3. Push car out of the wall so it doesn't clip
       const pushDist = collision.depth + 2;
       car.x += collision.nx * pushDist;
       car.y += collision.ny * pushDist;
