@@ -66,6 +66,13 @@ export class Car {
   // Suspension sway from rapid steering inputs (-1 to 1, negative=left, positive=right)
   suspensionSway: number = 0;
 
+  // Smoothed steering direction for visuals (persists longer than raw steerDirection)
+  smoothSteer: number = 0;
+
+  // Previous angle for angular velocity calculation (body lean)
+  prevAngle: number = 0;
+  angularVelocity: number = 0;
+
   // Visual
   width: number = 142;
   height: number = 76;

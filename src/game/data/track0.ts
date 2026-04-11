@@ -138,18 +138,12 @@ export const TRACK0_DATA: TrackData = {
   ],
 
   startCells: [
-    { index: 0, lane: 1, x: 1345, y: 6705, angle: 4.7124 },
-    { index: 1, lane: 2, x: 1556, y: 6506, angle: 4.7124 },
-    { index: 2, lane: 1, x: 1345, y: 6320, angle: 4.7124 },
-    { index: 3, lane: 2, x: 1557, y: 6121, angle: 4.7124 },
-    { index: 4, lane: 1, x: 1347, y: 5938, angle: 4.7124 },
-    { index: 5, lane: 2, x: 1557, y: 5738, angle: 4.7124 },
-    { index: 6, lane: 1, x: 1344, y: 5553, angle: 4.7124 },
-    { index: 7, lane: 2, x: 1557, y: 5351, angle: 4.7124 },
-    { index: 8, lane: 1, x: 1344, y: 5166, angle: 4.7124 },
-    { index: 9, lane: 2, x: 1557, y: 4961, angle: 4.7124 },
-    { index: 10, lane: 1, x: 1344, y: 4776, angle: 4.7124 },
-    { index: 11, lane: 2, x: 1557, y: 4571, angle: 4.7124 },
+    { index: 0, lane: 1, x: 1345, y: 5500, angle: 4.7124 },
+    { index: 1, lane: 2, x: 1556, y: 5300, angle: 4.7124 },
+    { index: 2, lane: 1, x: 1345, y: 5100, angle: 4.7124 },
+    { index: 3, lane: 2, x: 1557, y: 4900, angle: 4.7124 },
+    { index: 4, lane: 1, x: 1347, y: 4700, angle: 4.7124 },
+    { index: 5, lane: 2, x: 1557, y: 4500, angle: 4.7124 },
   ],
 
   checkpoints: [
@@ -354,16 +348,12 @@ export const TRACK0_DATA: TrackData = {
     garageBuilding: { x: 2500, y: 5250, w: 3000, h: 350, angle: 1.5708 },
     // 10 team pit boxes along the pit lane (each ~280 units apart, flush with lane)
     pitBoxes: [
-      { x: 2250, y: 3950, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 4230, w: 250, h: 200, angle: 0 },
-      { x: 2250, y: 4510, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 4790, w: 250, h: 200, angle: 0 },
-      { x: 2250, y: 5070, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 5350, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 5630, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 5910, w: 250, h: 200, angle: 0 },
       { x: 2250, y: 6190, w: 250, h: 200, angle: 0 },
-      { x: 2250, y: 6470, w: 250, h: 200, angle: 0 },
     ],
     // Pit entry: curves from main road to pit lane (at bottom)
     pitEntry: { x1: 1700, y1: 13500, x2: 2150, y2: 6700 },

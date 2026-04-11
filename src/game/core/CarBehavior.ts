@@ -23,7 +23,7 @@ export interface CarBehaviorParams {
   maxSpeed: number;       // pixels/second (default 1500, game override from upgrades)
   acceleration: number;   // pixels/second² (default 500)
   deceleration: number;   // pixels/second² (default 500)
-  steerSpeed: number;     // radians/second (default toRadians(350))
+  steerSpeed: number;     // radians/second (default toRadians(180))
   driftRecover: number;   // radians/second (default toRadians(350))
   friction: number;       // 0–1 coefficient (default 0.7)
   turnWhileStopped: boolean; // default false
@@ -35,7 +35,7 @@ export const DEFAULT_CAR_PARAMS: CarBehaviorParams = {
   maxSpeed: 1500,
   acceleration: 500,
   deceleration: 500,
-  steerSpeed: toRadians(350),
+  steerSpeed: toRadians(180),
   driftRecover: toRadians(350),
   friction: 0.7,
   turnWhileStopped: false,

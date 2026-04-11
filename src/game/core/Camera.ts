@@ -39,8 +39,8 @@ export class Camera {
   private readonly minZoom: number = 0.55;  // At max speed: see road ahead
   private readonly maxZoom: number = 0.65;  // At zero speed: closer view
   // Mobile gets higher zoom (closer view) so the car fills more screen
-  private readonly mobileMinZoom: number = 1.40;
-  private readonly mobileMaxZoom: number = 1.70;
+  private readonly mobileMinZoom: number = 1.15;
+  private readonly mobileMaxZoom: number = 1.40;
 
   /** Whether to use mobile zoom levels */
   isMobile: boolean = false;

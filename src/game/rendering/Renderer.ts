@@ -119,11 +119,11 @@ export class Renderer {
     ctx.restore();
 
     // === SCREEN SPACE (HUD) ===
-    this.renderHUD(raceState, cars, cw, ch);
+    this.renderHUD(raceState, cars, cw, ch, track);
 
     // Mobile touch controls
     if (this.input?.isMobile) {
-      this.renderMobileControls(cw, ch);
+      this.renderMobileControls(cw, ch, cars);
     }
 
     // Countdown overlay
@@ -358,8 +358,8 @@ export class Renderer {
     const laneOffsets = [-90, 90];
 
     // Define start grid zone to skip lane lines
-    const gridMinY = 4200;
-    const gridMaxY = 6900;
+    const gridMinY = 4350;
+    const gridMaxY = 5650;
     const gridMinX = 1100;
     const gridMaxX = 1800;
 
@@ -1527,7 +1527,7 @@ export class Renderer {
     this.drawWheel(ctx, -52 * sx,  28 * sy + swayPx, 30 * sx, 18 * sy, sx, sy, true, speedRatio);
 
     // ===== FRONT WHEELS (narrower, rotate with steering) =====
-    const steerAngle = car.steerDirection * 0.35; // ~20 degrees max
+    const steerAngle = car.smoothSteer * 0.35; // ~20 degrees max, smoothed for AI visibility
     // Front-left wheel
     {
       const cx = 54 * sx, cy = -37 * sy + swayPx; // wheel center
@@ -2067,15 +2067,16 @@ export class Renderer {
 
   // ==================== HUD RENDERING ====================
 
-  private renderHUD(state: RaceState, cars: Car[], cw: number, ch: number): void {
+  private renderHUD(state: RaceState, cars: Car[], cw: number, ch: number, track: TrackData): void {
     const { ctx } = this;
     const player = cars.find(c => c.isPlayer);
     if (!player) return;
 
     const scale = cw / 1080; // Scale HUD to fit canvas width
 
-    // --- Speed display (bottom-left) ---
+    // --- Speed display (bottom-left) — hidden on mobile (shown in mobile controls) ---
     const speed = Math.round(Math.abs(player.behavior.speed));
+    if (!this.input?.isMobile) {
     ctx.save();
     ctx.font = `bold ${64 * scale}px monospace`;
     ctx.fillStyle = COLORS.hudText;
@@ -2110,49 +2111,160 @@ export class Renderer {
     const ratio = Math.abs(player.behavior.speed) / player.maxSpeed;
     ctx.fillStyle = ratio > 0.9 ? '#ff4444' : ratio > 0.7 ? COLORS.hudAccent : '#44cc44';
     ctx.fillRect(barX, barY, barWidth * Math.min(ratio, 1), barHeight);
+    }
+
+    // --- Top HUD bar (glassmorphic, consistent with bottom controls) ---
+    const topBarH = 64 * scale;
+    const topBarY = 14 * scale;
+    const topBarR = 16 * scale;
+    const topPad = 14 * scale;
+
+    // Helper: draw a glassmorphic panel
+    const drawGlassPanel = (px: number, py: number, pw: number, ph: number, pr: number) => {
+      const grad = ctx.createLinearGradient(px, py, px, py + ph);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0.40)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5 * scale;
+      ctx.beginPath();
+      ctx.roundRect(px, py, pw, ph, pr);
+      ctx.stroke();
+    };
 
     // --- Position display (top-left) ---
+    const posW = 120 * scale;
     ctx.save();
-    ctx.fillStyle = COLORS.hudBg;
-    this.drawRoundRect(20 * scale, 20 * scale, 160 * scale, 80 * scale, 12 * scale);
+    drawGlassPanel(topPad, topBarY, posW, topBarH, topBarR);
 
-    ctx.fillStyle = COLORS.hudText;
-    ctx.font = `bold ${48 * scale}px monospace`;
-    ctx.textAlign = 'left';
+    // Position number
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${34 * scale}px monospace`;
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${state.playerPosition}`, 35 * scale, 54 * scale);
+    const posCenterX = topPad + posW / 2;
+    const posCenterY = topBarY + topBarH / 2;
+    const posText = `${state.playerPosition}`;
+    const posNumW = ctx.measureText(posText).width;
+    ctx.fillText(posText, posCenterX - 10 * scale, posCenterY);
 
-    ctx.font = `${24 * scale}px monospace`;
-    ctx.fillStyle = '#aaaaaa';
-    ctx.fillText(`/${this.getCarCount(cars)}`, 35 * scale + ctx.measureText(`${state.playerPosition}`).width + 4 * scale, 58 * scale);
-    ctx.restore();
-
-    // --- Lap display (top-right) ---
-    ctx.save();
-    ctx.fillStyle = COLORS.hudBg;
-    this.drawRoundRect(cw - 200 * scale, 20 * scale, 180 * scale, 80 * scale, 12 * scale);
-
-    ctx.fillStyle = '#aaaaaa';
-    ctx.font = `${20 * scale}px monospace`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText('LAP', cw - 40 * scale, 28 * scale);
-
-    ctx.fillStyle = COLORS.hudText;
-    ctx.font = `bold ${40 * scale}px monospace`;
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(`${state.playerLap}/${state.totalLaps}`, cw - 40 * scale, 90 * scale);
+    // "/total" suffix
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = `${18 * scale}px sans-serif`;
+    ctx.fillText(`/${this.getCarCount(cars)}`, posCenterX + posNumW / 2 + 4 * scale, posCenterY + 2 * scale);
     ctx.restore();
 
     // --- Race time (top-center) ---
+    const timeW = 140 * scale;
+    const timeX = cw / 2 - timeW / 2;
     ctx.save();
-    ctx.fillStyle = COLORS.hudBg;
-    this.drawRoundRect(cw / 2 - 80 * scale, 20 * scale, 160 * scale, 50 * scale, 10 * scale);
-    ctx.fillStyle = COLORS.hudText;
-    ctx.font = `${24 * scale}px monospace`;
+    drawGlassPanel(timeX, topBarY, timeW, topBarH, topBarR);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${24 * scale}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(this.formatTime(state.raceTime), cw / 2, 45 * scale);
+    ctx.fillText(this.formatTime(state.raceTime), cw / 2, topBarY + topBarH / 2);
+    ctx.restore();
+
+    // --- Lap display (left of minimap) ---
+    const lapW = 90 * scale;
+    const minimapSize = 150 * scale;
+    const minimapX = cw - topPad - minimapSize;
+    const lapX = minimapX - lapW - 8 * scale;
+    ctx.save();
+    drawGlassPanel(lapX, topBarY, lapW, topBarH, topBarR);
+
+    // "LAP" label
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = `${14 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('LAP', lapX + lapW / 2, topBarY + 8 * scale);
+
+    // Lap count
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${26 * scale}px monospace`;
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${state.playerLap}/${state.totalLaps}`, lapX + lapW / 2, topBarY + topBarH - 6 * scale);
+    ctx.restore();
+
+    // --- Minimap (top-right, glassmorphic) ---
+    const mmX = minimapX;
+    const mmY = topBarY;
+    const mmW = minimapSize;
+    const mmH = minimapSize;
+    const mmR = topBarR;
+
+    ctx.save();
+    drawGlassPanel(mmX, mmY, mmW, mmH, mmR);
+
+    // Clip to minimap panel
+    ctx.beginPath();
+    ctx.roundRect(mmX + 2, mmY + 2, mmW - 4, mmH - 4, mmR - 1);
+    ctx.clip();
+
+    // Map waypoints to minimap coordinates
+    const wps = track.waypoints;
+    const mapW = track.width;
+    const mapH = track.height;
+    const mmPad = 12 * scale;
+    const drawW = mmW - mmPad * 2;
+    const drawH = mmH - mmPad * 2;
+    const mapScale = Math.min(drawW / mapW, drawH / mapH);
+    const offsetX = mmX + mmPad + (drawW - mapW * mapScale) / 2;
+    const offsetY = mmY + mmPad + (drawH - mapH * mapScale) / 2;
+
+    // Draw track outline from waypoints
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 3 * scale;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < wps.length; i++) {
+      const sx = offsetX + wps[i].x * mapScale;
+      const sy = offsetY + wps[i].y * mapScale;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Draw AI cars as small dots
+    for (const car of cars) {
+      if (car.isPlayer) continue;
+      const cx = offsetX + car.x * mapScale;
+      const cy = offsetY + car.y * mapScale;
+      ctx.fillStyle = car.color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw player car as larger bright dot with glow
+    if (player) {
+      const px = offsetX + player.x * mapScale;
+      const py = offsetY + player.y * mapScale;
+
+      // Glow
+      ctx.shadowColor = '#00ccff';
+      ctx.shadowBlur = 8 * scale;
+      ctx.fillStyle = '#00ccff';
+      ctx.beginPath();
+      ctx.arc(px, py, 4.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // White center
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(px, py, 2.5 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
 
     // --- Drift indicator ---
@@ -2178,75 +2290,219 @@ export class Renderer {
 
   // ==================== MOBILE CONTROLS ====================
 
-  private renderMobileControls(cw: number, ch: number): void {
+  private renderMobileControls(cw: number, ch: number, cars: Car[]): void {
     if (!this.input) return;
     const { ctx } = this;
     const rect = this.canvas.getBoundingClientRect();
     const lb = this.input.leftButtonRect;
     const rb = this.input.rightButtonRect;
+    const bb = this.input.brakeButtonRect;
+    const player = cars.find(c => c.isPlayer);
 
     // Convert CSS-pixel button rects to canvas render coordinates
     const scaleX = cw / rect.width;
     const scaleY = ch / rect.height;
 
-    const drawArrowButton = (
+    // --- Draw vertical steering slider ---
+    const drawSteerSlider = (
       bx: number, by: number, bw: number, bh: number,
       direction: 'left' | 'right', pressed: boolean
     ) => {
       ctx.save();
-
-      // Button background
-      ctx.fillStyle = pressed ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.45)';
-      ctx.beginPath();
-      const r = 16 * scaleX;
       const x = bx; const y = by; const w = bw; const h = bh;
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-      ctx.lineTo(x + r, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-      ctx.lineTo(x, y + r);
-      ctx.quadraticCurveTo(x, y, x + r, y);
-      ctx.closePath();
+      const r = 24 * scaleX;
+
+      // Outer glass panel
+      const grad = ctx.createLinearGradient(x, y, x, y + h);
+      if (pressed) {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.30)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
+      } else {
+        grad.addColorStop(0, 'rgba(0, 0, 0, 0.40)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+      }
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
       ctx.fill();
 
-      // Button border
-      ctx.strokeStyle = pressed ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.25)';
+      // Border glow
+      ctx.strokeStyle = pressed ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.12)';
       ctx.lineWidth = 2 * scaleX;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
       ctx.stroke();
 
-      // Arrow icon
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      const arrowSize = Math.min(w, h) * 0.35;
+      // Inner track groove
+      const trackW = 6 * scaleX;
+      const trackH = h * 0.55;
+      const trackX = x + (w - trackW) / 2;
+      const trackY = y + (h - trackH) / 2;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.beginPath();
+      ctx.roundRect(trackX, trackY, trackW, trackH, trackW / 2);
+      ctx.fill();
 
-      ctx.fillStyle = pressed ? '#ffffff' : 'rgba(255, 255, 255, 0.8)';
+      // Slider knob (moves slightly when pressed)
+      const knobR = 14 * scaleX;
+      const knobCx = x + w / 2;
+      const knobCy = y + h / 2 + (pressed ? -12 * scaleY : 0);
+      const knobGrad = ctx.createRadialGradient(knobCx, knobCy - 3 * scaleY, 0, knobCx, knobCy, knobR);
+      knobGrad.addColorStop(0, pressed ? '#ffffff' : 'rgba(255,255,255,0.9)');
+      knobGrad.addColorStop(1, pressed ? 'rgba(200,200,200,0.8)' : 'rgba(180,180,180,0.5)');
+      ctx.fillStyle = knobGrad;
+      ctx.beginPath();
+      ctx.arc(knobCx, knobCy, knobR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 1.5 * scaleX;
+      ctx.stroke();
+
+      // Arrow chevron on the knob
+      const arrowSz = 7 * scaleX;
+      ctx.strokeStyle = pressed ? '#333' : 'rgba(60,60,60,0.8)';
+      ctx.lineWidth = 2.5 * scaleX;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
       if (direction === 'left') {
-        ctx.moveTo(cx - arrowSize * 0.6, cy);
-        ctx.lineTo(cx + arrowSize * 0.4, cy - arrowSize * 0.7);
-        ctx.lineTo(cx + arrowSize * 0.4, cy + arrowSize * 0.7);
+        ctx.moveTo(knobCx + arrowSz * 0.3, knobCy - arrowSz * 0.5);
+        ctx.lineTo(knobCx - arrowSz * 0.4, knobCy);
+        ctx.lineTo(knobCx + arrowSz * 0.3, knobCy + arrowSz * 0.5);
       } else {
-        ctx.moveTo(cx + arrowSize * 0.6, cy);
-        ctx.lineTo(cx - arrowSize * 0.4, cy - arrowSize * 0.7);
-        ctx.lineTo(cx - arrowSize * 0.4, cy + arrowSize * 0.7);
+        ctx.moveTo(knobCx - arrowSz * 0.3, knobCy - arrowSz * 0.5);
+        ctx.lineTo(knobCx + arrowSz * 0.4, knobCy);
+        ctx.lineTo(knobCx - arrowSz * 0.3, knobCy + arrowSz * 0.5);
       }
-      ctx.closePath();
-      ctx.fill();
+      ctx.stroke();
+
+      // Direction label
+      ctx.fillStyle = pressed ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)';
+      ctx.font = `bold ${11 * scaleX}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(direction === 'left' ? 'L' : 'R', x + w / 2, y + h - 10 * scaleY);
 
       ctx.restore();
     };
 
-    drawArrowButton(
+    // --- Draw brake button ---
+    const drawBrakeButton = (
+      bx: number, by: number, bw: number, bh: number,
+      pressed: boolean
+    ) => {
+      ctx.save();
+      const x = bx; const y = by; const w = bw; const h = bh;
+      const r = 16 * scaleX;
+
+      // Glass background with red tint
+      const grad = ctx.createLinearGradient(x, y, x, y + h);
+      if (pressed) {
+        grad.addColorStop(0, 'rgba(255, 60, 60, 0.55)');
+        grad.addColorStop(1, 'rgba(200, 30, 30, 0.65)');
+      } else {
+        grad.addColorStop(0, 'rgba(140, 20, 20, 0.45)');
+        grad.addColorStop(1, 'rgba(80, 10, 10, 0.55)');
+      }
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = pressed ? 'rgba(255, 100, 100, 0.7)' : 'rgba(255, 80, 80, 0.25)';
+      ctx.lineWidth = 2 * scaleX;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      ctx.stroke();
+
+      // "BRAKE" text
+      ctx.fillStyle = pressed ? '#ffffff' : 'rgba(255, 200, 200, 0.8)';
+      ctx.font = `bold ${16 * scaleX}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('BRAKE', x + w / 2, y + h / 2);
+
+      ctx.restore();
+    };
+
+    // Draw left slider
+    drawSteerSlider(
       lb.x * scaleX, lb.y * scaleY, lb.w * scaleX, lb.h * scaleY,
       'left', this.input.leftPressed
     );
-    drawArrowButton(
+    // Draw right slider
+    drawSteerSlider(
       rb.x * scaleX, rb.y * scaleY, rb.w * scaleX, rb.h * scaleY,
       'right', this.input.rightPressed
     );
+    // Draw brake button
+    drawBrakeButton(
+      bb.x * scaleX, bb.y * scaleY, bb.w * scaleX, bb.h * scaleY,
+      this.input.brakePressed
+    );
+
+    // --- Speed display integrated into mobile controls ---
+    if (player) {
+      const speed = Math.round(Math.abs(player.behavior.speed));
+      const ratio = Math.abs(player.behavior.speed) / player.maxSpeed;
+      const gearText = player.gear === 0 ? 'N' : `${player.gear}`;
+
+      // Panel positioned above brake, centered
+      const panelW = bb.w * scaleX * 1.4;
+      const panelH = 80 * scaleY;
+      const panelX = (cw - panelW) / 2;
+      const panelY = bb.y * scaleY - panelH - 12 * scaleY;
+      const panelR = 16 * scaleX;
+
+      // Glass background
+      const sGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+      sGrad.addColorStop(0, 'rgba(0, 0, 0, 0.40)');
+      sGrad.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+      ctx.fillStyle = sGrad;
+      ctx.beginPath();
+      ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5 * scaleX;
+      ctx.beginPath();
+      ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+      ctx.stroke();
+
+      // Speed number
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${36 * scaleX}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${speed}`, panelX + panelW * 0.42, panelY + panelH * 0.38);
+
+      // KMH label
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = `${13 * scaleX}px sans-serif`;
+      ctx.fillText('KMH', panelX + panelW * 0.42, panelY + panelH * 0.68);
+
+      // Gear indicator (right side)
+      ctx.fillStyle = ratio > 0.9 ? '#ff4444' : ratio > 0.7 ? '#ff8800' : '#44cc44';
+      ctx.font = `bold ${30 * scaleX}px monospace`;
+      ctx.fillText(gearText, panelX + panelW * 0.82, panelY + panelH * 0.45);
+      ctx.restore();
+
+      // Speed bar at bottom of panel
+      const sBarH = 4 * scaleY;
+      const sBarX = panelX + 10 * scaleX;
+      const sBarW = panelW - 20 * scaleX;
+      const sBarY = panelY + panelH - sBarH - 6 * scaleY;
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      ctx.roundRect(sBarX, sBarY, sBarW, sBarH, sBarH / 2);
+      ctx.fill();
+      const fillColor = ratio > 0.9 ? '#ff4444' : ratio > 0.7 ? '#ff8800' : '#44cc44';
+      ctx.fillStyle = fillColor;
+      ctx.beginPath();
+      ctx.roundRect(sBarX, sBarY, sBarW * Math.min(ratio, 1), sBarH, sBarH / 2);
+      ctx.fill();
+    }
   }
 
   // ==================== OVERLAYS ====================

@@ -41,10 +41,12 @@ export class InputManager {
   /** Current button rects in canvas-relative CSS pixels (set by updateButtonRects) */
   leftButtonRect: TouchButtonRect = { x: 0, y: 0, w: 0, h: 0 };
   rightButtonRect: TouchButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+  brakeButtonRect: TouchButtonRect = { x: 0, y: 0, w: 0, h: 0 };
 
   /** Whether each button is currently pressed (for rendering highlight) */
   leftPressed: boolean = false;
   rightPressed: boolean = false;
+  brakePressed: boolean = false;
 
   constructor() {
     this.onKeyDown = this.onKeyDown.bind(this);
@@ -83,13 +85,21 @@ export class InputManager {
   updateButtonRects(): void {
     if (!this.canvas) return;
     const rect = this.canvas.getBoundingClientRect();
-    const btnW = Math.min(rect.width * 0.28, 140);
-    const btnH = Math.min(rect.height * 0.10, 80);
-    const margin = 24;
-    const bottomY = rect.height - btnH - margin;
+    // Tall vertical sliders on left and right sides
+    const sliderW = Math.min(rect.width * 0.18, 90);
+    const sliderH = Math.min(rect.height * 0.38, 220);
+    const margin = 16;
+    const bottomY = rect.height - sliderH - margin;
 
-    this.leftButtonRect = { x: margin, y: bottomY, w: btnW, h: btnH };
-    this.rightButtonRect = { x: rect.width - btnW - margin, y: bottomY, w: btnW, h: btnH };
+    this.leftButtonRect = { x: margin, y: bottomY, w: sliderW, h: sliderH };
+    this.rightButtonRect = { x: rect.width - sliderW - margin, y: bottomY, w: sliderW, h: sliderH };
+
+    // Brake button centered at bottom
+    const brakeW = Math.min(rect.width * 0.22, 120);
+    const brakeH = Math.min(rect.height * 0.10, 60);
+    const brakeX = (rect.width - brakeW) / 2;
+    const brakeY = rect.height - brakeH - margin;
+    this.brakeButtonRect = { x: brakeX, y: brakeY, w: brakeW, h: brakeH };
   }
 
   setViewport(width: number, height: number): void {
@@ -168,37 +178,40 @@ export class InputManager {
     const rect = this.canvas.getBoundingClientRect();
     const lb = this.leftButtonRect;
     const rb = this.rightButtonRect;
+    const bb = this.brakeButtonRect;
 
     for (const [, pos] of this.activeTouches) {
       const relX = pos.x - rect.left;
       const relY = pos.y - rect.top;
 
-      // Check if touching the left arrow button
+      // Check if touching the left slider
       if (relX >= lb.x && relX <= lb.x + lb.w && relY >= lb.y && relY <= lb.y + lb.h) {
         this.touchZones.left = true;
         continue;
       }
 
-      // Check if touching the right arrow button
+      // Check if touching the right slider
       if (relX >= rb.x && relX <= rb.x + rb.w && relY >= rb.y && relY <= rb.y + rb.h) {
         this.touchZones.right = true;
         continue;
       }
 
-      // Anything else in the bottom 15% is brake
-      if (relY > rect.height * 0.85) {
+      // Check if touching the brake button
+      if (relX >= bb.x && relX <= bb.x + bb.w && relY >= bb.y && relY <= bb.y + bb.h) {
         this.touchZones.brake = true;
+        continue;
+      }
+
+      // Fallback: left half steers left, right half steers right
+      if (relX < rect.width / 2) {
+        this.touchZones.left = true;
       } else {
-        // Fallback: left half steers left, right half steers right
-        if (relX < rect.width / 2) {
-          this.touchZones.left = true;
-        } else {
-          this.touchZones.right = true;
-        }
+        this.touchZones.right = true;
       }
     }
 
     this.leftPressed = this.touchZones.left;
     this.rightPressed = this.touchZones.right;
+    this.brakePressed = this.touchZones.brake;
   }
 }

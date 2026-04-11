@@ -14,7 +14,7 @@ import { checkFenceCollision, checkCarCollision } from './systems/CollisionSyste
 import { Renderer } from './rendering/Renderer';
 import { lerp, toRadians, angleTo, angleDifference, isClockwise, wrapAngle, distance } from './core/math';
 
-const NUM_CARS = 12;
+const NUM_CARS = 6;
 const PLAYER_SLOT = 0; // Player is the first car (pole position)
 
 export class Game {
@@ -118,7 +118,7 @@ export class Game {
     // maxSpeed from engine, steerSpeed uses Car behavior default (350°/s)
     // acceleration and deceleration from brakes upgrade
     const playerMaxSpeed = UPGRADE_DEFAULTS.engine.base;   // 850 px/s
-    const playerSteer = 220;      // degrees/s (reduced from 350 for less twitchy steering)
+    const playerSteer = 35;       // degrees/s (minimal sensitivity)
     const playerAccel = 220;      // px/s² — low base so drag curve makes 850 take a long time
     const playerDecel = 500;      // px/s² (default)
     const playerGrip = UPGRADE_DEFAULTS.grip.base;         // 110
@@ -153,8 +153,8 @@ export class Game {
       } else {
         // AI speed distribution: slightly boosted from original for competitive racing
         const t = (cells.length > 1) ? i / (cells.length - 1) : 0.5;
-        const aiMaxSpeed = lerp(0.93 * playerMaxSpeed, 0.98 * playerMaxSpeed, t);
-        const aiSteer = lerp(400, 600, t);
+        const aiMaxSpeed = lerp(1.20 * playerMaxSpeed, 1.20 * playerMaxSpeed, t);
+        const aiSteer = lerp(120, 160, t);  // much lower — fluid turns like player
 
         const config: CarConfig = {
           id: i,
@@ -248,6 +248,43 @@ export class Game {
     // --- Physics tick for all cars ---
     for (const car of this.cars) {
       car.update(dt);
+    }
+
+    // --- Cornering visuals for ALL cars (body lean + wheel turn from angular velocity) ---
+    for (const car of this.cars) {
+      // Compute angular velocity from actual angle change (works for both player & AI)
+      const angleDelta = car.angle - car.prevAngle;
+      // Normalize to -PI..PI
+      let normDelta = angleDelta;
+      if (normDelta > Math.PI) normDelta -= Math.PI * 2;
+      if (normDelta < -Math.PI) normDelta += Math.PI * 2;
+      car.prevAngle = car.angle;
+
+      if (dt > 0) {
+        const rawAngVel = normDelta / dt; // radians/second
+        // Smooth angular velocity — faster tracking for fluid response
+        car.angularVelocity += (rawAngVel - car.angularVelocity) * Math.min(1, 12 * dt);
+      }
+
+      // Derive smoothSteer from angular velocity — maps turning rate to -1..1
+      // With lower steerSpeed (120-160°/s ≈ 2-2.8 rad/s), 1.5 maps well to full lock
+      const steerFromTurn = Math.max(-1, Math.min(1, car.angularVelocity / 1.5));
+
+      if (car.isPlayer) {
+        const rawSteer = car.steerDirection;
+        car.smoothSteer += (rawSteer - car.smoothSteer) * Math.min(1, 15 * dt);
+      } else {
+        // AI: fast tracking so wheel movement follows actual cornering tightly
+        car.smoothSteer += (steerFromTurn - car.smoothSteer) * Math.min(1, 10 * dt);
+      }
+      if (Math.abs(car.smoothSteer) < 0.005) car.smoothSteer = 0;
+
+      // Suspension sway (body lean) from cornering — for AI cars
+      if (!car.isPlayer && car.state === 'running') {
+        const targetSway = steerFromTurn * 1.0; // full lean
+        car.suspensionSway += (targetSway - car.suspensionSway) * Math.min(1, 6 * dt);
+        if (Math.abs(car.suspensionSway) < 0.005) car.suspensionSway = 0;
+      }
     }
 
     // --- Fence collision ---
@@ -400,16 +437,22 @@ export class Game {
         );
 
         if (collision) {
-          const pushDist = collision.depth / 2 + 1;
+          // 1. Separate cars (push apart so they don't overlap)
+          const pushDist = collision.depth / 2 + 2;
           a.x += collision.nx * pushDist;
           a.y += collision.ny * pushDist;
           b.x -= collision.nx * pushDist;
           b.y -= collision.ny * pushDist;
 
-          // Speed exchange (simplified)
-          const avgSpeed = (Math.abs(a.behavior.speed) + Math.abs(b.behavior.speed)) / 2;
-          a.behavior.speed = avgSpeed * 0.85;
-          b.behavior.speed = avgSpeed * 0.85;
+          // 2. Gentle speed reduction — only lose 5% per collision, minimum 60 px/s
+          const minSpeed = 60;
+          a.behavior.speed = Math.max(Math.abs(a.behavior.speed) * 0.95, minSpeed);
+          b.behavior.speed = Math.max(Math.abs(b.behavior.speed) * 0.95, minSpeed);
+
+          // 3. Slight deflection — nudge motion angles away from each other
+          const deflect = 0.08; // ~4.5 degrees
+          a.behavior.motionAngle += collision.nx > 0 ? deflect : -deflect;
+          b.behavior.motionAngle += collision.nx > 0 ? -deflect : deflect;
         }
       }
     }
