@@ -17,6 +17,29 @@ import { RaceState } from '../systems/RaceManager';
 import { TEAMS } from '../data/gameConfig';
 import type { MenuState } from '../Game';
 
+/** A grass/dirt particle kicked up by a car on grass */
+interface GrassParticle {
+  x: number;      // world x
+  y: number;      // world y
+  vx: number;     // velocity x
+  vy: number;     // velocity y
+  life: number;   // remaining life (0-1)
+  size: number;   // radius
+  color: string;  // grass green or dirt brown
+  rotation: number;
+  rotSpeed: number;
+}
+
+/** A tire skid mark segment on the road surface */
+interface TireMark {
+  x: number;      // world x
+  y: number;      // world y
+  angle: number;  // mark angle (car facing direction)
+  width: number;  // mark width
+  length: number; // mark length
+  alpha: number;  // opacity (fades over time)
+}
+
 const COLORS = {
   grass: '#2b8a3e',
   grassDark: '#237032',
@@ -58,6 +81,8 @@ export class Renderer {
   private sponsorOnFormulaImg: HTMLImageElement | null = null;
   private carlsbergImg: HTMLImageElement | null = null;
   private speedLines: { x: number; y: number; len: number; alpha: number }[] = [];
+  private grassParticles: Map<number, GrassParticle[]> = new Map();
+  private tireMarks: TireMark[] = [];
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     this.canvas = canvas;
@@ -120,6 +145,8 @@ export class Renderer {
 
     const bounds = this.camera.getVisibleBounds();
     this.renderTrack(track, bounds);
+    this.renderTireMarks(bounds);
+    this.updateAndRenderGrassParticles(cars);
     this.renderCars(cars);
     this.renderBridges(track);
 
@@ -1538,10 +1565,179 @@ export class Renderer {
     ctx.restore();
   }
 
+  // ==================== TIRE MARKS ====================
+
+  /** Spawn tire marks from a car when drifting or turning hard */
+  private spawnTireMarks(car: Car): void {
+    // Skip cars not on road or not moving
+    if (car.onGrass || car.state !== 'running') return;
+    const speed = Math.abs(car.behavior.speed);
+    if (speed < 80) return;
+
+    // Trigger conditions:
+    // 1. Significant drift angle (car sliding)
+    const driftThreshold = 0.12; // ~7 degrees
+    // 2. High angular velocity (sharp turning)
+    const angVelThreshold = 1.2; // rad/s
+    
+    const isDrifting = car.driftAngle > driftThreshold;
+    const isHardTurn = Math.abs(car.angularVelocity) > angVelThreshold;
+
+    if (!isDrifting && !isHardTurn) return;
+
+    // Intensity for mark opacity
+    const driftIntensity = Math.min(car.driftAngle / 0.5, 1);
+    const turnIntensity = Math.min(Math.abs(car.angularVelocity) / 3, 1);
+    const intensity = Math.max(driftIntensity, turnIntensity);
+
+    const cosA = Math.cos(car.angle);
+    const sinA = Math.sin(car.angle);
+    const sx = car.width / 142;
+    const sy = car.height / 76;
+
+    // Rear wheel offsets (from drawCar)
+    const rearOffsetX = -52 * sx;
+    const leftWheelY = -37 * sy;
+    const rightWheelY = 37 * sy;
+
+    // World positions of rear wheels
+    const leftX = car.x + cosA * rearOffsetX - sinA * leftWheelY;
+    const leftY = car.y + sinA * rearOffsetX + cosA * leftWheelY;
+    const rightX = car.x + cosA * rearOffsetX - sinA * rightWheelY;
+    const rightY = car.y + sinA * rearOffsetX + cosA * rightWheelY;
+
+    const markAlpha = 0.15 + intensity * 0.25; // 0.15--0.40
+    const markLen = 8 + speed * 0.012;
+
+    // Left rear tire mark
+    this.tireMarks.push({
+      x: leftX, y: leftY,
+      angle: car.angle,
+      width: 7 * sx,
+      length: markLen,
+      alpha: markAlpha,
+    });
+
+    // Right rear tire mark
+    this.tireMarks.push({
+      x: rightX, y: rightY,
+      angle: car.angle,
+      width: 7 * sx,
+      length: markLen,
+      alpha: markAlpha,
+    });
+
+    // Cap total marks to avoid memory issues — keep latest
+    if (this.tireMarks.length > 1500) {
+      this.tireMarks.splice(0, this.tireMarks.length - 1200);
+    }
+  }
+
+  /** Render all tire marks on the track surface */
+  private renderTireMarks(bounds: { minX: number; minY: number; maxX: number; maxY: number }): void {
+    const { ctx } = this;
+    if (this.tireMarks.length === 0) return;
+
+    ctx.save();
+
+    for (let i = this.tireMarks.length - 1; i >= 0; i--) {
+      const m = this.tireMarks[i];
+
+      // Fade marks over time
+      m.alpha -= 0.0003;
+      if (m.alpha <= 0) {
+        this.tireMarks.splice(i, 1);
+        continue;
+      }
+
+      // Cull marks outside camera view (with margin)
+      if (m.x < bounds.minX - 100 || m.x > bounds.maxX + 100 ||
+          m.y < bounds.minY - 100 || m.y > bounds.maxY + 100) {
+        continue;
+      }
+
+      // Draw the mark as a dark rectangle
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(m.angle);
+      ctx.globalAlpha = m.alpha;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(-m.length / 2, -m.width / 2, m.length, m.width);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // ==================== GRASS PARTICLES ====================
+
+  private updateAndRenderGrassParticles(cars: Car[]): void {
+    const { ctx } = this;
+    const now = performance.now();
+    const dt = Math.min((now - (this._lastGrassTime || now)) / 1000, 0.05);
+    this._lastGrassTime = now;
+
+    if (dt === 0) return;
+
+    for (const car of cars) {
+      const particles = this.grassParticles.get(car.id);
+      if (!particles || particles.length === 0) continue;
+
+      // Update and render particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Physics update
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= 0.96; // air drag
+        p.vy *= 0.96;
+        p.life -= dt * 1.8; // fade over ~0.55s
+        p.rotation += p.rotSpeed * dt;
+
+        // Remove dead particles
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        // Render
+        const alpha = p.life * 0.7;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+
+        // Draw as irregular chunk (not a perfect circle)
+        ctx.beginPath();
+        const s = p.size;
+        ctx.moveTo(-s, -s * 0.6);
+        ctx.lineTo(s * 0.7, -s);
+        ctx.lineTo(s, s * 0.5);
+        ctx.lineTo(-s * 0.4, s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Cap max particles per car
+      if (particles.length > 80) {
+        particles.splice(0, particles.length - 80);
+      }
+    }
+  }
+  private _lastGrassTime: number = 0;
+
   // ==================== CAR RENDERING ====================
 
   private renderCars(cars: Car[]): void {
     const { ctx } = this;
+
+    // Spawn tire marks before drawing (runs every frame)
+    for (const car of cars) {
+      this.spawnTireMarks(car);
+    }
 
     // Sort by Y position for proper layering (further cars drawn first)
     const sorted = [...cars].sort((a, b) => a.y - b.y);
@@ -1967,20 +2163,52 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    // ===== GRASS SPRAY =====
+    // ===== GRASS SPRAY (spawn particles) =====
     if (car.onGrass && Math.abs(car.behavior.speed) > 50) {
-      const t = Date.now();
-      ctx.fillStyle = '#3a9a3a';
-      for (let p = 0; p < 8; p++) {
-        const px = -35 * sx + Math.sin(t / 60 + p * 1.7) * 30 * sx;
-        const py = Math.cos(t / 80 + p * 2.3) * 35 * sy;
-        const r = 2 + (p % 3);
-        ctx.globalAlpha = 0.25 + Math.sin(t / 40 + p) * 0.12;
-        ctx.beginPath();
-        ctx.arc(px, py, r, 0, Math.PI * 2);
-        ctx.fill();
+      const speedRatio = Math.min(Math.abs(car.behavior.speed) / 800, 1);
+      const spawnCount = Math.floor(2 + speedRatio * 4); // 2-6 particles per frame
+      const cosA = Math.cos(car.angle);
+      const sinA = Math.sin(car.angle);
+      // Rear wheel positions in world space
+      const rearX = car.x - cosA * 40 * sx;
+      const rearY = car.y - sinA * 40 * sx;
+
+      let particles = this.grassParticles.get(car.id);
+      if (!particles) {
+        particles = [];
+        this.grassParticles.set(car.id, particles);
       }
-      ctx.globalAlpha = 1;
+
+      for (let i = 0; i < spawnCount; i++) {
+        // Spawn from left or right rear wheel area
+        const side = (i % 2 === 0) ? -1 : 1;
+        const spawnX = rearX + (-sinA * side * 22 * sy);
+        const spawnY = rearY + (cosA * side * 22 * sy);
+
+        // Particles fly backward and outward from the car
+        const backSpeed = 80 + Math.random() * 200 * speedRatio;
+        const sideSpeed = (Math.random() - 0.5) * 180 * speedRatio;
+        const vx = -cosA * backSpeed + (-sinA) * sideSpeed;
+        const vy = -sinA * backSpeed + cosA * sideSpeed;
+
+        // Mix of grass chunks and dirt
+        const isDirt = Math.random() < 0.4;
+        const greens = ['#3a9a3a', '#2d7a2d', '#4aaa4a', '#5cb85c'];
+        const browns = ['#8B6914', '#6B4E12', '#A0782C', '#7A5B1E'];
+        const palette = isDirt ? browns : greens;
+
+        particles.push({
+          x: spawnX + (Math.random() - 0.5) * 10,
+          y: spawnY + (Math.random() - 0.5) * 10,
+          vx,
+          vy,
+          life: 1.0,
+          size: isDirt ? (1.5 + Math.random() * 3) : (2 + Math.random() * 4.5),
+          color: palette[Math.floor(Math.random() * palette.length)],
+          rotation: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 12,
+        });
+      }
     }
 
     // ===== BOOSTER FLAME =====
