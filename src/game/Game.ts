@@ -58,6 +58,8 @@ export class Game {
   };
   private menuClickHandler: ((e: MouseEvent) => void) | null = null;
   private menuTouchHandler: ((e: TouchEvent) => void) | null = null;
+  private finishClickHandler: ((e: MouseEvent) => void) | null = null;
+  private finishTouchHandler: ((e: TouchEvent) => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -76,9 +78,20 @@ export class Game {
     this.input.attach(this.canvas);
     window.addEventListener('resize', this.resizeCanvas);
 
-    // Restart on space (keyboard) or tap (touch)
+    // Restart on space (keyboard)
     window.addEventListener('keydown', this.handleRestart);
     this.input.onTap = this.handleRestartTap;
+
+    // Finish screen button handlers (persistent during gameplay)
+    this.finishClickHandler = (e: MouseEvent) => this.handleFinishClick(e.clientX, e.clientY);
+    this.finishTouchHandler = (e: TouchEvent) => {
+      if (e.touches.length > 0 && this.raceManager.getState().playerFinished) {
+        e.preventDefault();
+        this.handleFinishClick(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    this.canvas.addEventListener('click', this.finishClickHandler);
+    this.canvas.addEventListener('touchstart', this.finishTouchHandler, { passive: false });
 
     // Load best times from localStorage
     this.loadBestTimes();
@@ -101,6 +114,7 @@ export class Game {
     }
     this.input.detach();
     this.detachMenuHandlers();
+    this.detachFinishHandlers();
     window.removeEventListener('resize', this.resizeCanvas);
     window.removeEventListener('keydown', this.handleRestart);
   }
@@ -146,10 +160,47 @@ export class Game {
     }
   };
 
-  private handleRestartTap = (): void => {
-    if (this.raceManager.getState().playerFinished) {
-      this.restart();
+  /** Handle clicks on the finish screen buttons */
+  private handleFinishClick(clientX: number, clientY: number): void {
+    if (!this.raceManager.getState().playerFinished) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+    const scaleX = cw / rect.width;
+    const scaleY = ch / rect.height;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
+    const buttons = this.renderer.getFinishButtons(cw, ch);
+    for (const btn of buttons) {
+      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        if (btn.id === 'finish_restart') {
+          this.restart();
+        } else if (btn.id === 'finish_menu') {
+          this.backToMenu();
+        }
+        return;
+      }
     }
+  }
+
+  private handleRestartTap = (): void => {
+    // Tap-to-restart disabled — use finish screen buttons instead
+  };
+
+  /** Go back to the main menu from the finish screen */
+  private backToMenu(): void {
+    const raceState = this.raceManager.getState();
+    if (raceState.playerFinished && raceState.playerFinishTime > 0) {
+      this.saveBestTime(raceState.playerPosition, raceState.playerFinishTime);
+    }
+    this.cars = [];
+    this.raceManager = new RaceManager(this.track);
+    this.aiSystem = new AISystem(this.track.waypoints, this.track.brakeAIZones);
+    this.menuState.gamePhase = 'menu';
+    this.menuState.screen = 'main';
+    this.attachMenuHandlers();
   };
 
   // ==================== CAR CREATION ====================
@@ -620,6 +671,17 @@ export class Game {
     if (this.menuTouchHandler) {
       this.canvas.removeEventListener('touchstart', this.menuTouchHandler);
       this.menuTouchHandler = null;
+    }
+  }
+
+  private detachFinishHandlers(): void {
+    if (this.finishClickHandler) {
+      this.canvas.removeEventListener('click', this.finishClickHandler);
+      this.finishClickHandler = null;
+    }
+    if (this.finishTouchHandler) {
+      this.canvas.removeEventListener('touchstart', this.finishTouchHandler);
+      this.finishTouchHandler = null;
     }
   }
 

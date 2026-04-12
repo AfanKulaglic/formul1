@@ -2660,68 +2660,120 @@ export class Renderer {
 
   private renderFinishScreen(state: RaceState, cw: number, ch: number): void {
     const { ctx } = this;
-    const scale = cw / 1080;
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
 
-    // Semi-transparent overlay
+    // === Full-screen background matching menu style ===
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+
+    // Green gradient background (same as menu)
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, ch);
+    bgGrad.addColorStop(0, '#1a4a2a');
+    bgGrad.addColorStop(0.5, '#1e5630');
+    bgGrad.addColorStop(1, '#153d22');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, cw, ch);
 
-    // Panel
-    const panelW = 700 * scale;
-    const panelH = 600 * scale;
+    // Subtle grid pattern (same as menu)
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    const gridStep = 60 * scale;
+    for (let gx = 0; gx < cw; gx += gridStep) {
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, ch); ctx.stroke();
+    }
+    for (let gy = 0; gy < ch; gy += gridStep) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke();
+    }
+
+    // Red accent line at top (same as menu)
+    ctx.fillStyle = '#e10600';
+    ctx.fillRect(0, 0, cw, 4 * scale);
+
+    // === Results panel (glassmorphic, like rankings panel) ===
+    const panelW = 500 * scale;
+    const panelH = 520 * scale;
     const panelX = (cw - panelW) / 2;
-    const panelY = (ch - panelH) / 2 - 50 * scale;
-    ctx.fillStyle = '#1a1a2e';
-    this.drawRoundRect(panelX, panelY, panelW, panelH, 20 * scale);
-    ctx.strokeStyle = '#333366';
-    ctx.lineWidth = 3 * scale;
+    const panelY = ch * 0.08;
+    const panelR = 16 * scale;
+
+    // Glass panel background
+    const panelGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelGrad.addColorStop(0, 'rgba(255, 255, 255, 0.06)');
+    panelGrad.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+    ctx.fillStyle = panelGrad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
     ctx.stroke();
 
-    // Position
+    // === Header — "RACE RESULTS" ===
+    ctx.fillStyle = '#ffd700';
+    ctx.font = `bold ${28 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('RACE RESULTS', cw / 2, panelY + 40 * scale);
+
+    // Separator line
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(panelX + 20 * scale, panelY + 65 * scale);
+    ctx.lineTo(panelX + panelW - 20 * scale, panelY + 65 * scale);
+    ctx.stroke();
+
+    // === Position ===
     const posText = `${state.playerPosition}`;
     const suffix = this.getOrdinalSuffix(state.playerPosition);
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${100 * scale}px monospace`;
+    ctx.font = `bold ${90 * scale}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(posText, cw / 2 - 30 * scale, panelY + 100 * scale);
-    ctx.font = `${40 * scale}px monospace`;
-    ctx.fillText(suffix, cw / 2 + 50 * scale, panelY + 80 * scale);
+    const posMetrics = ctx.measureText(posText);
+    const posX = cw / 2 - 15 * scale;
+    ctx.fillText(posText, posX, panelY + 135 * scale);
+    ctx.font = `bold ${36 * scale}px sans-serif`;
+    ctx.fillText(suffix, posX + posMetrics.width / 2 + 8 * scale, panelY + 110 * scale);
 
-    // Congratulation message
+    // === Congratulation message ===
     const msgs = ['TRACK BOSS!', 'GREAT DRIVE!', 'NICE RACE!', 'KEEP TRYING!'];
     const msgIdx = Math.min(state.playerPosition - 1, 3);
-    ctx.fillStyle = state.playerStars === 3 ? COLORS.hudAccent : '#aaaaaa';
-    ctx.font = `bold ${36 * scale}px monospace`;
-    ctx.fillText(msgs[msgIdx], cw / 2, panelY + 170 * scale);
+    ctx.fillStyle = state.playerStars === 3 ? '#ffd700' : 'rgba(255,255,255,0.5)';
+    ctx.font = `bold ${26 * scale}px sans-serif`;
+    ctx.fillText(msgs[msgIdx], cw / 2, panelY + 200 * scale);
 
-    // Time
-    ctx.fillStyle = '#cccccc';
-    ctx.font = `${32 * scale}px monospace`;
-    ctx.fillText(this.formatTime(state.playerFinishTime), cw / 2, panelY + 230 * scale);
+    // === Time ===
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = `${24 * scale}px sans-serif`;
+    ctx.fillText(this.formatTime(state.playerFinishTime), cw / 2, panelY + 250 * scale);
 
-    // Stars
-    const starY = panelY + 310 * scale;
+    // === Stars ===
+    const starY = panelY + 320 * scale;
     for (let i = 0; i < 3; i++) {
-      const starX = cw / 2 + (i - 1) * 80 * scale;
-      ctx.font = `${60 * scale}px monospace`;
-      ctx.fillStyle = i < state.playerStars ? COLORS.hudAccent : '#333333';
+      const starX = cw / 2 + (i - 1) * 70 * scale;
+      ctx.font = `${52 * scale}px sans-serif`;
+      ctx.fillStyle = i < state.playerStars ? '#ffd700' : 'rgba(255,255,255,0.12)';
       ctx.fillText('★', starX, starY);
     }
 
-    // Reward
-    ctx.fillStyle = '#aaaaaa';
-    ctx.font = `${24 * scale}px monospace`;
-    ctx.fillText('REWARD', cw / 2, panelY + 400 * scale);
-    ctx.fillStyle = COLORS.hudAccent;
-    ctx.font = `bold ${48 * scale}px monospace`;
-    ctx.fillText(`~${state.playerReward}`, cw / 2, panelY + 460 * scale);
+    // === Reward ===
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = `${20 * scale}px sans-serif`;
+    ctx.fillText('REWARD', cw / 2, panelY + 390 * scale);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = `bold ${42 * scale}px sans-serif`;
+    ctx.fillText(`~${state.playerReward}`, cw / 2, panelY + 440 * scale);
 
-    // Restart hint
-    ctx.fillStyle = '#888888';
-    ctx.font = `${22 * scale}px monospace`;
-    ctx.fillText('Press SPACE or tap to restart', cw / 2, panelY + panelH + 50 * scale);
+    // === Buttons (menu-style glassmorphic) ===
+    const finishBtns = this.getFinishButtons(cw, ch);
+    for (const btn of finishBtns) {
+      const label = btn.id === 'finish_restart' ? 'RESTART RACE' : 'BACK TO MENU';
+      const accent = btn.id === 'finish_restart' ? '#e10600' : 'rgba(255,255,255,0.2)';
+      this.renderMenuButton(btn.x, btn.y, btn.w, btn.h, label, scale, accent);
+    }
 
     ctx.restore();
   }
@@ -2924,6 +2976,24 @@ export class Renderer {
   // ==================== MENU RENDERING ====================
 
   /** Returns clickable button regions for the current menu screen */
+  getFinishButtons(cw: number, ch: number): { id: string; x: number; y: number; w: number; h: number }[] {
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
+    const btnW = 420 * scale;
+    const btnH = 72 * scale;
+    const btnX = (cw - btnW) / 2;
+    const gap = 20 * scale;
+
+    const panelH = 520 * scale;
+    const panelY = ch * 0.08;
+    const startY = panelY + panelH + 30 * scale;
+
+    return [
+      { id: 'finish_restart', x: btnX, y: startY, w: btnW, h: btnH },
+      { id: 'finish_menu', x: btnX, y: startY + btnH + gap, w: btnW, h: btnH },
+    ];
+  }
+
   getMenuButtons(menuState: MenuState, cw: number, ch: number): { id: string; x: number; y: number; w: number; h: number }[] {
     const isMobile = !!this.input?.isMobile;
     const scale = isMobile ? cw / 500 : cw / 1080;
