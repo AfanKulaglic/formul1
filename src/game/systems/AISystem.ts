@@ -273,14 +273,15 @@ export class AISystem {
       }
     }
 
-    // === 8. Car avoidance — steer around and brake behind nearby cars ===
-    const avoidRadius = 250;     // detection range (px)
-    const avoidAheadDist = 350;  // how far ahead to check for cars directly in path
+    // === 8. Car avoidance — proactive steering to avoid ALL nearby cars ===
+    const avoidAheadDist = 500;   // how far ahead to scan (increased)
+    const avoidSideDist = 200;    // lateral scan distance
     const cosAngle = Math.cos(car.angle);
     const sinAngle = Math.sin(car.angle);
 
     let avoidSteer = 0;  // accumulated avoidance steering (-1 left, +1 right)
     let shouldBrakeForCar = false;
+    let closestAheadDist = Infinity;
 
     for (const other of allCars) {
       if (other === car || other.state === 'idle') continue;
@@ -288,43 +289,112 @@ export class AISystem {
       const dx = other.x - car.x;
       const dy = other.y - car.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > avoidAheadDist || dist < 1) continue;
+      if (dist > avoidAheadDist + 100 || dist < 1) continue;
 
       // Project other car position into this car's local frame
-      // forward = along car.angle, right = perpendicular
       const localForward = dx * cosAngle + dy * sinAngle;
       const localRight = -dx * sinAngle + dy * cosAngle;
 
-      // Only avoid cars that are ahead of us
-      if (localForward < 0) continue;
+      // --- Cars ahead: steer around them ---
+      if (localForward > -30 && localForward < avoidAheadDist) {
+        const closeness = 1 - Math.max(0, dist - 50) / avoidAheadDist;
+        const lateralCloseness = 1 - Math.min(Math.abs(localRight) / 120, 1);
 
-      const closeness = 1 - dist / avoidAheadDist; // 1 = very close, 0 = far
+        // If car is nearly directly ahead (narrow lateral band), brake
+        if (Math.abs(localRight) < 90 && localForward > 0 && localForward < 300) {
+          if (closeness > 0.3) {
+            shouldBrakeForCar = true;
+            closestAheadDist = Math.min(closestAheadDist, localForward);
+          }
+        }
 
-      // If car is directly ahead (narrow lateral band), brake
-      if (Math.abs(localRight) < 80 && localForward < avoidAheadDist && localForward > 0) {
-        shouldBrakeForCar = closeness > 0.4;
+        // Steer away — stronger when closer laterally AND longitudinally
+        if (localForward > 0 && dist < avoidAheadDist) {
+          const urgency = closeness * lateralCloseness;
+          const steerDir = localRight > 0 ? -1 : 1;
+          avoidSteer += steerDir * urgency * 1.5;
+        }
       }
 
-      // Steer away — push away from the side the other car is on
-      if (dist < avoidRadius && localForward > 0) {
-        const steerAway = localRight > 0 ? -closeness : closeness;
-        avoidSteer += steerAway;
+      // --- Cars alongside: maintain lateral clearance ---
+      if (Math.abs(localForward) < 120 && Math.abs(localRight) < avoidSideDist) {
+        const sideUrgency = 1 - Math.abs(localRight) / avoidSideDist;
+        const steerDir = localRight > 0 ? -1 : 1;
+        avoidSteer += steerDir * sideUrgency * 0.8;
       }
     }
 
-    // Apply avoidance steering
-    if (Math.abs(avoidSteer) > 0.15) {
+    // Apply avoidance steering (stronger response)
+    if (Math.abs(avoidSteer) > 0.08) {
       if (avoidSteer < 0) {
         car.behavior.simulateControl(0); // steer left
       } else {
         car.behavior.simulateControl(1); // steer right
       }
+      // Extra steering input for strong avoidance needs
+      if (Math.abs(avoidSteer) > 0.6) {
+        if (avoidSteer < 0) {
+          car.behavior.simulateControl(0);
+        } else {
+          car.behavior.simulateControl(1);
+        }
+      }
     }
 
     // Brake if car directly ahead is too close
-    if (shouldBrakeForCar && car.behavior.speed > car.maxSpeed * 0.3) {
-      car.behavior.simulateControl(3); // brake
-      car.braking = true;
+    if (shouldBrakeForCar && car.behavior.speed > car.maxSpeed * 0.25) {
+      // Proportional braking — harder when closer
+      if (closestAheadDist < 150) {
+        car.behavior.simulateControl(3); // hard brake
+        car.braking = true;
+      } else if (car.behavior.speed > car.maxSpeed * 0.4) {
+        car.behavior.simulateControl(3);
+        car.braking = true;
+      }
+    }
+
+    // === 9. Defensive driving — block the player from overtaking ===
+    const player = allCars.find(c => c.isPlayer);
+    if (player && player.state === 'running') {
+      const pdx = player.x - car.x;
+      const pdy = player.y - car.y;
+      const playerDist = Math.sqrt(pdx * pdx + pdy * pdy);
+
+      // Only defend when player is close enough to be a threat
+      if (playerDist < 450 && playerDist > 30) {
+        const playerLocalFwd = pdx * cosAngle + pdy * sinAngle;
+        const playerLocalRight = -pdx * sinAngle + pdy * cosAngle;
+
+        // Player is behind or alongside — they're trying to overtake
+        if (playerLocalFwd < 100 && playerLocalFwd > -350) {
+          const playerSide = playerLocalRight; // positive = player is to our right
+
+          // Move toward the player's lane to block them
+          // The closer they are, the more aggressively we block
+          const blockUrgency = (1 - playerDist / 450) * personality.aggression;
+
+          if (Math.abs(playerSide) > 30 && Math.abs(playerSide) < 250) {
+            // Shift lane toward the player to close the gap
+            if (playerSide > 0) {
+              // Player is to the right — steer right to block
+              avoidSteer += blockUrgency * 0.6;
+              car.behavior.simulateControl(1);
+            } else {
+              // Player is to the left — steer left to block
+              avoidSteer -= blockUrgency * 0.6;
+              car.behavior.simulateControl(0);
+            }
+          }
+
+          // If player is directly behind and very close, weave slightly to block
+          if (Math.abs(playerSide) < 80 && playerLocalFwd < 0 && playerLocalFwd > -200) {
+            // Maintain center line — don't let them draft and slingshot past
+            if (speed < car.maxSpeed * 0.95) {
+              car.behavior.simulateControl(2); // keep throttle up when defending
+            }
+          }
+        }
+      }
     }
   }
 
