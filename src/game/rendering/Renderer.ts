@@ -86,7 +86,6 @@ export class Renderer {
   private sponsorImagesLoaded = false;
   private sponsorOnFormulaImg: HTMLImageElement | null = null;
   private carlsbergImg: HTMLImageElement | null = null;
-  private speedLines: { x: number; y: number; len: number; alpha: number }[] = [];
   private grassParticles: Map<number, GrassParticle[]> = new Map();
   private tireTrails: TireTrail[] = [];
   private activeTrails: Map<string, TireTrail> = new Map(); // key: "carId_left" or "carId_right"
@@ -212,12 +211,6 @@ export class Renderer {
     radGrad.addColorStop(1, 'rgba(0, 0, 0, 0.18)');
     ctx.fillStyle = radGrad;
     ctx.fillRect(0, 0, cw, ch);
-
-    // === SPEED LINES (screen-space, drawn before HUD) ===
-    const player = cars.find(c => c.isPlayer);
-    if (player) {
-      this.renderSpeedLines(player, cw, ch);
-    }
 
     // === SCREEN SPACE (HUD) ===
     this.renderHUD(raceState, cars, cw, ch, track);
@@ -3373,63 +3366,6 @@ export class Renderer {
       const label = btn.id === 'finish_restart' ? 'RESTART RACE' : 'BACK TO MENU';
       const accent = btn.id === 'finish_restart' ? '#e10600' : 'rgba(255,255,255,0.2)';
       this.renderMenuButton(btn.x, btn.y, btn.w, btn.h, label, scale, accent);
-    }
-
-    ctx.restore();
-  }
-
-  // ==================== SPEED LINES ====================
-
-  private renderSpeedLines(player: Car, cw: number, ch: number): void {
-    const { ctx } = this;
-    const speedRatio = Math.abs(player.behavior.speed) / player.maxSpeed;
-
-    // Only show speed lines above 60% speed
-    if (speedRatio < 0.6) {
-      this.speedLines = [];
-      return;
-    }
-
-    const intensity = (speedRatio - 0.6) / 0.4; // 0 at 60%, 1 at 100%
-    const lineCount = Math.floor(8 + intensity * 16); // 8-24 lines
-
-    // Spawn new lines if needed
-    while (this.speedLines.length < lineCount) {
-      this.speedLines.push({
-        x: Math.random() * cw,
-        y: Math.random() * ch,
-        len: 40 + Math.random() * 120,
-        alpha: 0.1 + Math.random() * 0.15,
-      });
-    }
-    // Trim excess
-    if (this.speedLines.length > lineCount) {
-      this.speedLines.length = lineCount;
-    }
-
-    ctx.save();
-    ctx.lineCap = 'round';
-
-    for (const line of this.speedLines) {
-      // Animate: lines move downward (since car faces up on screen)
-      line.y += (8 + intensity * 25);
-      if (line.y > ch + line.len) {
-        line.y = -line.len;
-        line.x = Math.random() * cw;
-        line.len = 40 + Math.random() * 120;
-      }
-
-      // Keep lines to the edges of the screen (not covering center)
-      const centerDist = Math.abs(line.x - cw / 2) / (cw / 2);
-      if (centerDist < 0.3) continue;
-
-      const lineAlpha = line.alpha * intensity * Math.min(centerDist, 1);
-      ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(line.x, line.y);
-      ctx.lineTo(line.x, line.y + line.len * intensity);
-      ctx.stroke();
     }
 
     ctx.restore();

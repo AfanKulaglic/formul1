@@ -119,18 +119,18 @@ export class Game {
     window.removeEventListener('keydown', this.handleRestart);
   }
 
-  /** Restart — save time and go back to menu */
+  /** Restart — restart the same race without going to menu */
   restart(): void {
     // Save finish time if completed
     const raceState = this.raceManager.getState();
     if (raceState.playerFinished && raceState.playerFinishTime > 0) {
       this.saveBestTime(raceState.playerPosition, raceState.playerFinishTime);
     }
-    this.stop();
+    const wasSolo = this.menuState.soloMode;
     this.cars = [];
     this.raceManager = new RaceManager(this.track);
     this.aiSystem = new AISystem(this.track.waypoints, this.track.brakeAIZones);
-    this.start();
+    this.startRace(wasSolo);
   }
 
   /** Start the actual race (called from menu) */
