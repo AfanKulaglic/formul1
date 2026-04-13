@@ -68,6 +68,15 @@ const COLORS = {
 
 const STAND_COLORS = ['#cc3333','#3366cc','#33aa55','#cc9933','#8833cc','#cc3366','#33aacc','#669933','#cc6633'];
 
+// ===== SUN / SHADOW DIRECTION =====
+// Sun is positioned upper-right. Shadows project to bottom-left.
+// sunAngle: direction the shadow falls (radians). 0 = right, π/2 = down.
+// sunDist: base shadow offset (pixels, scaled per object height).
+const SUN_ANGLE = Math.PI * 0.72;        //  ~130° — sun from upper-right
+const SUN_COS = Math.cos(SUN_ANGLE);     // x component of shadow direction
+const SUN_SIN = Math.sin(SUN_ANGLE);     // y component of shadow direction
+const SHADOW_LENGTH = 1.0;               // multiplier for shadow stretch
+
 export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -774,9 +783,32 @@ export class Renderer {
     const wallY = -h / 2;
     const adY = wallY + wallH;
 
-    // ===== GROUND SHADOW =====
-    ctx.fillStyle = 'rgba(0,0,0,0.10)';
-    ctx.fillRect(exL + 4, h / 2, ew, 6);
+    // ===== GROUND SHADOW (sun-directional) =====
+    // Project a shadow from the fence onto the ground based on sun angle
+    // Un-rotate sun direction into fence local space
+    const fenceRelAngle = SUN_ANGLE - fence.angle;
+    const fshX = Math.cos(fenceRelAngle) * 14 * SHADOW_LENGTH;
+    const fshY = Math.sin(fenceRelAngle) * 14 * SHADOW_LENGTH;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    // Shadow is a parallelogram: bottom edge of fence + projected offset
+    ctx.moveTo(exL, h / 2);
+    ctx.lineTo(exL + ew, h / 2);
+    ctx.lineTo(exL + ew + fshX, h / 2 + fshY);
+    ctx.lineTo(exL + fshX, h / 2 + fshY);
+    ctx.closePath();
+    ctx.fill();
+    // Also cast shadow from top cap
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.beginPath();
+    const capShX = Math.cos(fenceRelAngle) * 22 * SHADOW_LENGTH;
+    const capShY = Math.sin(fenceRelAngle) * 22 * SHADOW_LENGTH;
+    ctx.moveTo(exL, -h / 2 - 5);
+    ctx.lineTo(exL + ew, -h / 2 - 5);
+    ctx.lineTo(exL + ew + capShX, -h / 2 - 5 + capShY);
+    ctx.lineTo(exL + capShX, -h / 2 - 5 + capShY);
+    ctx.closePath();
+    ctx.fill();
 
     // ===== MAIN CONCRETE WALL =====
     // Smooth gradient wall face
@@ -972,9 +1004,21 @@ export class Renderer {
     const w = Math.abs(rect.w);
     const h = Math.abs(rect.h);
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.fillRect(-w / 2 - 8, -h / 2 - 8, w + 16, h + 16);
+    // Sun-directional shadow
+    const brRelAngle = SUN_ANGLE - rect.angle;
+    const brShDist = 18 * SHADOW_LENGTH;
+    const brShX = Math.cos(brRelAngle) * brShDist;
+    const brShY = Math.sin(brRelAngle) * brShDist;
+    ctx.fillStyle = 'rgba(0,0,0,0.20)';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, -h / 2);
+    ctx.lineTo(w / 2, -h / 2);
+    ctx.lineTo(w / 2 + brShX, -h / 2 + brShY);
+    ctx.lineTo(w / 2 + brShX, h / 2 + brShY);
+    ctx.lineTo(-w / 2 + brShX, h / 2 + brShY);
+    ctx.lineTo(-w / 2, h / 2);
+    ctx.closePath();
+    ctx.fill();
 
     // Bridge deck
     ctx.fillStyle = COLORS.bridge;
@@ -1371,6 +1415,11 @@ export class Renderer {
     ctx.fillRect(-w / 2, -h / 2, w, h);
     ctx.globalAlpha = 1;
 
+    // Sun shadow offset for individual trees (local space)
+    const treeRelAngle = SUN_ANGLE - rect.angle;
+    const treeShadowX = Math.cos(treeRelAngle) * 10 * SHADOW_LENGTH;
+    const treeShadowY = Math.sin(treeRelAngle) * 10 * SHADOW_LENGTH;
+
     // Tree crowns
     const spacing = 55;
     const cols = Math.max(1, Math.floor(w / spacing));
@@ -1380,6 +1429,14 @@ export class Renderer {
         const tx = -w / 2 + spacing / 2 + c * (w / cols);
         const ty = -h / 2 + spacing / 2 + r * (h / rows);
         const radius = 18 + ((c * 7 + r * 13) % 13);
+
+        // Ground shadow under each tree crown
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.beginPath();
+        ctx.ellipse(tx + treeShadowX, ty + treeShadowY, radius * 1.1, radius * 0.7, treeRelAngle, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Tree crown
         ctx.fillStyle = (c + r) % 3 === 0 ? COLORS.treeDark : COLORS.treeLight;
         ctx.beginPath();
         ctx.arc(tx, ty, radius, 0, Math.PI * 2);
@@ -1397,6 +1454,11 @@ export class Renderer {
     const w = Math.abs(rect.w);
     const h = Math.abs(rect.h);
 
+    // Sun shadow offset for palms (local space)
+    const palmRelAngle = SUN_ANGLE - rect.angle;
+    const palmShadowX = Math.cos(palmRelAngle) * 14 * SHADOW_LENGTH;
+    const palmShadowY = Math.sin(palmRelAngle) * 14 * SHADOW_LENGTH;
+
     const spacing = 75;
     const cols = Math.max(1, Math.floor(w / spacing));
     const rows = Math.max(1, Math.floor(h / spacing));
@@ -1404,6 +1466,14 @@ export class Renderer {
       for (let r = 0; r < rows; r++) {
         const tx = -w / 2 + spacing / 2 + c * (w / cols);
         const ty = -h / 2 + spacing / 2 + r * (h / rows);
+        const leafR = 22 + ((c * 5 + r * 11) % 10);
+
+        // Ground shadow — elongated ellipse
+        ctx.fillStyle = 'rgba(0,0,0,0.13)';
+        ctx.beginPath();
+        ctx.ellipse(tx + palmShadowX, ty + palmShadowY, leafR * 1.2, leafR * 0.6, palmRelAngle, 0, Math.PI * 2);
+        ctx.fill();
+
         // Trunk
         ctx.fillStyle = '#8B7355';
         ctx.beginPath();
@@ -1411,7 +1481,6 @@ export class Renderer {
         ctx.fill();
         // Leaves
         ctx.fillStyle = COLORS.palmLeaf;
-        const leafR = 22 + ((c * 5 + r * 11) % 10);
         ctx.beginPath();
         ctx.arc(tx, ty - 3, leafR, 0, Math.PI * 2);
         ctx.fill();
@@ -1445,9 +1514,21 @@ export class Renderer {
       '#44bb66', '#6644cc', '#ff5533', '#00aaff', '#dd6699',
     ];
 
-    // ===== 1. DROP SHADOW =====
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fillRect(-w / 2 + 10, -h / 2 + 10, w, h);
+    // ===== 1. DROP SHADOW (sun-directional) =====
+    const gsRelAngle = SUN_ANGLE - rect.angle;
+    const gsShadowDist = 20 * SHADOW_LENGTH;
+    const gsShX = Math.cos(gsRelAngle) * gsShadowDist;
+    const gsShY = Math.sin(gsRelAngle) * gsShadowDist;
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, -h / 2);
+    ctx.lineTo(w / 2, -h / 2);
+    ctx.lineTo(w / 2 + gsShX, -h / 2 + gsShY);
+    ctx.lineTo(w / 2 + gsShX, h / 2 + gsShY);
+    ctx.lineTo(-w / 2 + gsShX, h / 2 + gsShY);
+    ctx.lineTo(-w / 2, h / 2);
+    ctx.closePath();
+    ctx.fill();
 
     // ===== 2. CONCRETE TIERED BASE =====
     // Overall base slab
@@ -1561,6 +1642,22 @@ export class Renderer {
     const w = Math.abs(rect.w);
     const h = Math.abs(rect.h);
 
+    // Sun-directional shadow
+    const bldRelAngle = SUN_ANGLE - rect.angle;
+    const bldShDist = 16 * SHADOW_LENGTH;
+    const bldShX = Math.cos(bldRelAngle) * bldShDist;
+    const bldShY = Math.sin(bldRelAngle) * bldShDist;
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, -h / 2);
+    ctx.lineTo(w / 2, -h / 2);
+    ctx.lineTo(w / 2 + bldShX, -h / 2 + bldShY);
+    ctx.lineTo(w / 2 + bldShX, h / 2 + bldShY);
+    ctx.lineTo(-w / 2 + bldShX, h / 2 + bldShY);
+    ctx.lineTo(-w / 2, h / 2);
+    ctx.closePath();
+    ctx.fill();
+
     // Body
     ctx.fillStyle = COLORS.building;
     ctx.fillRect(-w / 2, -h / 2, w, h);
@@ -1602,14 +1699,22 @@ export class Renderer {
     ];
     ctx.save();
     ctx.font = 'bold 120px sans-serif';
-    ctx.fillStyle = '#cc4411';
-    ctx.globalAlpha = 0.4;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const p of positions) {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle);
+      // Sun-directional text shadow
+      const bannerRelAngle = SUN_ANGLE - p.angle;
+      const bShX = Math.cos(bannerRelAngle) * 8 * SHADOW_LENGTH;
+      const bShY = Math.sin(bannerRelAngle) * 8 * SHADOW_LENGTH;
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.globalAlpha = 0.35;
+      ctx.fillText('FORMULA', bShX, bShY);
+      // Actual text
+      ctx.fillStyle = '#cc4411';
+      ctx.globalAlpha = 0.4;
       ctx.fillText('FORMULA', 0, 0);
       ctx.restore();
     }
@@ -1874,10 +1979,18 @@ export class Renderer {
     const dark = this.darkenColor(car.color, 0.4);
     const mid = this.darkenColor(car.color, 0.65);
 
-    // ===== SHADOW =====
+    // ===== SHADOW (sun-directional) =====
+    // Shadow offset is computed in local car space from global sun direction
+    // We need to un-rotate the global sun direction into the car's local frame
+    const shadowDist = 12 * SHADOW_LENGTH;
+    const relAngle = SUN_ANGLE - car.angle; // sun direction relative to car orientation
+    const shX = Math.cos(relAngle) * shadowDist * sx;
+    const shY = Math.sin(relAngle) * shadowDist * sy;
     ctx.save();
-    ctx.translate(5 * sx, 7 * sy);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.translate(shX, shY);
+    // Slight stretch along shadow direction for more convincing ground shadow
+    ctx.scale(1.04, 1.04);
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
     this.drawF1Silhouette(sx, sy);
     ctx.restore();
 
