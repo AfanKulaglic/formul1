@@ -144,6 +144,7 @@ export class Game {
 
     const player = this.cars.find(c => c.isPlayer)!;
     this.camera.snapTo(player.x, player.y, player.angle);
+    this.camera.perspective3D = true;
   }
 
   private handleRestart = (e: KeyboardEvent): void => {
@@ -200,6 +201,7 @@ export class Game {
     this.aiSystem = new AISystem(this.track.waypoints, this.track.brakeAIZones);
     this.menuState.gamePhase = 'menu';
     this.menuState.screen = 'main';
+    this.camera.perspective3D = false;
     this.attachMenuHandlers();
   };
 

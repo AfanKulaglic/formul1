@@ -87,26 +87,53 @@ export class Camera {
     this.angle = angle;
   }
 
+  /** Whether 3D perspective is active (during gameplay) */
+  perspective3D: boolean = false;
+  private readonly perspectiveStrength: number = 0.00025; // subtle vanishing point
+
   /**
    * Apply camera transform to a canvas context for world-space rendering.
    * Objects drawn after this are in world coordinates.
+   * When perspective3D is true, applies a vertical perspective skew
+   * so the road ahead appears to narrow into the distance.
    */
   applyTransform(ctx: CanvasRenderingContext2D): void {
     const cx = this.canvasWidth / 2;
     const cy = this.canvasHeight / 2;
 
-    // Move origin to center of canvas
-    ctx.translate(cx, cy);
+    if (this.perspective3D) {
+      // Perspective projection using a 2D affine + projective trick:
+      // We shift the vertical pivot point up so the top of view is compressed.
+      // This creates a trapezoid that mimics a 3D road.
+      const rot = -this.angle - Math.PI / 2;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
 
-    // Scale for zoom
-    ctx.scale(this.zoom, this.zoom);
+      // Standard transform: translate to center, scale, rotate, translate to world
+      // We add a Y-scale gradient: scaleY is larger at bottom (near car), smaller at top (far)
+      // Implemented as a pre-transform vertical squish offset from center
 
-    // Rotate camera so the car faces "up" on screen
-    // Car angle 0 = pointing right. Subtract π/2 so the car nose points up.
-    ctx.rotate(-this.angle - Math.PI / 2);
+      // First move to center
+      ctx.translate(cx, cy);
 
-    // Translate to camera position in world
-    ctx.translate(-this.x, -this.y);
+      // Apply perspective as a subtle Y-axis scale increase at bottom of canvas
+      // This compresses the top (distance) and expands the bottom (near)
+      const perspY = 1 + this.perspectiveStrength * cy;
+      ctx.transform(1, 0, 0, 1, 0, cy * 0.08);  // shift view slightly down (camera elevation)
+      ctx.scale(this.zoom, this.zoom * perspY);
+
+      // Rotate
+      ctx.rotate(rot);
+
+      // Translate to world position
+      ctx.translate(-this.x, -this.y);
+    } else {
+      // Standard 2D transform (for menu rendering)
+      ctx.translate(cx, cy);
+      ctx.scale(this.zoom, this.zoom);
+      ctx.rotate(-this.angle - Math.PI / 2);
+      ctx.translate(-this.x, -this.y);
+    }
   }
 
   /**

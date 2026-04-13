@@ -30,14 +30,11 @@ interface GrassParticle {
   rotSpeed: number;
 }
 
-/** A tire skid mark segment on the road surface */
-interface TireMark {
-  x: number;      // world x
-  y: number;      // world y
-  angle: number;  // mark angle (car facing direction)
-  width: number;  // mark width
-  length: number; // mark length
-  alpha: number;  // opacity (fades over time)
+/** A tire skid trail — a series of connected points from one wheel */
+interface TireTrail {
+  points: { x: number; y: number }[];  // sequential wheel positions
+  alpha: number;    // base opacity (fades over time)
+  width: number;    // line width
 }
 
 const COLORS = {
@@ -82,7 +79,8 @@ export class Renderer {
   private carlsbergImg: HTMLImageElement | null = null;
   private speedLines: { x: number; y: number; len: number; alpha: number }[] = [];
   private grassParticles: Map<number, GrassParticle[]> = new Map();
-  private tireMarks: TireMark[] = [];
+  private tireTrails: TireTrail[] = [];
+  private activeTrails: Map<string, TireTrail> = new Map(); // key: "carId_left" or "carId_right"
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     this.canvas = canvas;
@@ -135,8 +133,13 @@ export class Renderer {
     }
     this.lastTreadTime = now;
 
-    // Clear
-    ctx.fillStyle = '#1a1a2e';
+    // Clear — sky-like gradient for 3D perspective horizon
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, ch);
+    skyGrad.addColorStop(0, '#6aaa7a');   // light green sky at horizon
+    skyGrad.addColorStop(0.3, '#3d8a4e'); // transition
+    skyGrad.addColorStop(0.6, '#2b8a3e'); // grass green
+    skyGrad.addColorStop(1, '#2b8a3e');
+    ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, cw, ch);
 
     // === WORLD SPACE (camera transform) ===
@@ -145,12 +148,21 @@ export class Renderer {
 
     const bounds = this.camera.getVisibleBounds();
     this.renderTrack(track, bounds);
-    this.renderTireMarks(bounds);
+    this.renderTireTrails(bounds);
     this.updateAndRenderGrassParticles(cars);
     this.renderCars(cars);
     this.renderBridges(track);
 
     ctx.restore();
+
+    // === ATMOSPHERIC DEPTH (screen-space fog) ===
+    // Subtle haze at the top of the screen — reinforces 3D depth
+    const fogGrad = ctx.createLinearGradient(0, 0, 0, ch * 0.45);
+    fogGrad.addColorStop(0, 'rgba(180, 210, 180, 0.15)');  // slight green haze
+    fogGrad.addColorStop(0.7, 'rgba(180, 210, 180, 0.04)');
+    fogGrad.addColorStop(1, 'rgba(180, 210, 180, 0)');      // fully transparent
+    ctx.fillStyle = fogGrad;
+    ctx.fillRect(0, 0, cw, ch * 0.45);
 
     // === SPEED LINES (screen-space, drawn before HUD) ===
     const player = cars.find(c => c.isPlayer);
@@ -1567,23 +1579,33 @@ export class Renderer {
 
   // ==================== TIRE MARKS ====================
 
-  /** Spawn tire marks from a car when drifting or turning hard */
+  /** Spawn tire trail points from a car when drifting or turning hard */
   private spawnTireMarks(car: Car): void {
     // Skip cars not on road or not moving
-    if (car.onGrass || car.state !== 'running') return;
+    if (car.onGrass || car.state !== 'running') {
+      // End any active trails for this car
+      this.endTrail(`${car.id}_left`);
+      this.endTrail(`${car.id}_right`);
+      return;
+    }
     const speed = Math.abs(car.behavior.speed);
-    if (speed < 80) return;
+    if (speed < 80) {
+      this.endTrail(`${car.id}_left`);
+      this.endTrail(`${car.id}_right`);
+      return;
+    }
 
-    // Trigger conditions:
-    // 1. Significant drift angle (car sliding)
-    const driftThreshold = 0.12; // ~7 degrees
-    // 2. High angular velocity (sharp turning)
-    const angVelThreshold = 1.2; // rad/s
-    
+    // Trigger conditions
+    const driftThreshold = 0.12;
+    const angVelThreshold = 1.2;
     const isDrifting = car.driftAngle > driftThreshold;
     const isHardTurn = Math.abs(car.angularVelocity) > angVelThreshold;
 
-    if (!isDrifting && !isHardTurn) return;
+    if (!isDrifting && !isHardTurn) {
+      this.endTrail(`${car.id}_left`);
+      this.endTrail(`${car.id}_right`);
+      return;
+    }
 
     // Intensity for mark opacity
     const driftIntensity = Math.min(car.driftAngle / 0.5, 1);
@@ -1595,7 +1617,7 @@ export class Renderer {
     const sx = car.width / 142;
     const sy = car.height / 76;
 
-    // Rear wheel offsets (from drawCar)
+    // Rear wheel offsets
     const rearOffsetX = -52 * sx;
     const leftWheelY = -37 * sy;
     const rightWheelY = 37 * sy;
@@ -1606,67 +1628,117 @@ export class Renderer {
     const rightX = car.x + cosA * rearOffsetX - sinA * rightWheelY;
     const rightY = car.y + sinA * rearOffsetX + cosA * rightWheelY;
 
-    const markAlpha = 0.15 + intensity * 0.25; // 0.15--0.40
-    const markLen = 8 + speed * 0.012;
+    const markAlpha = 0.15 + intensity * 0.25;
+    const markWidth = 7 * sx;
 
-    // Left rear tire mark
-    this.tireMarks.push({
-      x: leftX, y: leftY,
-      angle: car.angle,
-      width: 7 * sx,
-      length: markLen,
-      alpha: markAlpha,
-    });
+    // Add to left trail
+    this.addTrailPoint(`${car.id}_left`, leftX, leftY, markAlpha, markWidth);
+    // Add to right trail
+    this.addTrailPoint(`${car.id}_right`, rightX, rightY, markAlpha, markWidth);
 
-    // Right rear tire mark
-    this.tireMarks.push({
-      x: rightX, y: rightY,
-      angle: car.angle,
-      width: 7 * sx,
-      length: markLen,
-      alpha: markAlpha,
-    });
-
-    // Cap total marks to avoid memory issues — keep latest
-    if (this.tireMarks.length > 1500) {
-      this.tireMarks.splice(0, this.tireMarks.length - 1200);
+    // Cap total trails
+    if (this.tireTrails.length > 200) {
+      this.tireTrails.splice(0, this.tireTrails.length - 150);
     }
   }
 
-  /** Render all tire marks on the track surface */
-  private renderTireMarks(bounds: { minX: number; minY: number; maxX: number; maxY: number }): void {
+  /** Add a point to an active trail, or start a new one */
+  private addTrailPoint(key: string, x: number, y: number, alpha: number, width: number): void {
+    let trail = this.activeTrails.get(key);
+    if (!trail) {
+      trail = { points: [], alpha, width };
+      this.activeTrails.set(key, trail);
+      this.tireTrails.push(trail);
+    }
+    trail.points.push({ x, y });
+    // Update alpha to current intensity (keeps the whole trail at peak intensity)
+    trail.alpha = Math.max(trail.alpha, alpha);
+
+    // Limit points per trail segment
+    if (trail.points.length > 120) {
+      // Split: finish this trail and start a new one continuing from last few points
+      const carry = trail.points.slice(-3);
+      this.activeTrails.delete(key);
+      const newTrail: TireTrail = { points: carry, alpha, width };
+      this.activeTrails.set(key, newTrail);
+      this.tireTrails.push(newTrail);
+    }
+  }
+
+  /** End an active trail (car stopped skidding) */
+  private endTrail(key: string): void {
+    this.activeTrails.delete(key);
+  }
+
+  /** Render all tire trails on the track surface */
+  private renderTireTrails(bounds: { minX: number; minY: number; maxX: number; maxY: number }): void {
     const { ctx } = this;
-    if (this.tireMarks.length === 0) return;
+    if (this.tireTrails.length === 0) return;
 
     ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    for (let i = this.tireMarks.length - 1; i >= 0; i--) {
-      const m = this.tireMarks[i];
+    for (let i = this.tireTrails.length - 1; i >= 0; i--) {
+      const trail = this.tireTrails[i];
 
-      // Fade marks over time
-      m.alpha -= 0.0003;
-      if (m.alpha <= 0) {
-        this.tireMarks.splice(i, 1);
+      // Fade trails over time
+      if (!this.activeTrails.has(this.getTrailKey(trail))) {
+        trail.alpha -= 0.0004;
+      }
+      if (trail.alpha <= 0 || trail.points.length < 2) {
+        this.tireTrails.splice(i, 1);
         continue;
       }
 
-      // Cull marks outside camera view (with margin)
-      if (m.x < bounds.minX - 100 || m.x > bounds.maxX + 100 ||
-          m.y < bounds.minY - 100 || m.y > bounds.maxY + 100) {
+      // Quick bounds check — use first and last point
+      const first = trail.points[0];
+      const last = trail.points[trail.points.length - 1];
+      const margin = 200;
+      const minPx = Math.min(first.x, last.x);
+      const maxPx = Math.max(first.x, last.x);
+      const minPy = Math.min(first.y, last.y);
+      const maxPy = Math.max(first.y, last.y);
+      if (maxPx < bounds.minX - margin || minPx > bounds.maxX + margin ||
+          maxPy < bounds.minY - margin || minPy > bounds.maxY + margin) {
         continue;
       }
 
-      // Draw the mark as a dark rectangle
-      ctx.save();
-      ctx.translate(m.x, m.y);
-      ctx.rotate(m.angle);
-      ctx.globalAlpha = m.alpha;
-      ctx.fillStyle = '#1a1a1a';
-      ctx.fillRect(-m.length / 2, -m.width / 2, m.length, m.width);
-      ctx.restore();
+      // Draw as a smooth curved path
+      ctx.globalAlpha = trail.alpha;
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = trail.width;
+      ctx.beginPath();
+      ctx.moveTo(trail.points[0].x, trail.points[0].y);
+
+      if (trail.points.length === 2) {
+        ctx.lineTo(trail.points[1].x, trail.points[1].y);
+      } else {
+        // Use quadratic curves through midpoints for smooth path
+        for (let j = 1; j < trail.points.length - 1; j++) {
+          const curr = trail.points[j];
+          const next = trail.points[j + 1];
+          const midX = (curr.x + next.x) / 2;
+          const midY = (curr.y + next.y) / 2;
+          ctx.quadraticCurveTo(curr.x, curr.y, midX, midY);
+        }
+        // Final point
+        const last = trail.points[trail.points.length - 1];
+        ctx.lineTo(last.x, last.y);
+      }
+
+      ctx.stroke();
     }
 
     ctx.restore();
+  }
+
+  /** Find the key of an active trail (for fade checking) */
+  private getTrailKey(trail: TireTrail): string {
+    for (const [key, t] of this.activeTrails) {
+      if (t === trail) return key;
+    }
+    return '';
   }
 
   // ==================== GRASS PARTICLES ====================
