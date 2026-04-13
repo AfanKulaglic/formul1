@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Formula Racers",
   description: "Top-down formula racing game",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export const viewport: Viewport = {
