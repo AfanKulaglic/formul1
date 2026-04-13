@@ -133,12 +133,12 @@ export class Renderer {
     }
     this.lastTreadTime = now;
 
-    // Clear — sky-like gradient for 3D perspective horizon
+    // Clear — subtle gradient backdrop (visible where track doesn't cover)
     const skyGrad = ctx.createLinearGradient(0, 0, 0, ch);
-    skyGrad.addColorStop(0, '#6aaa7a');   // light green sky at horizon
-    skyGrad.addColorStop(0.3, '#3d8a4e'); // transition
-    skyGrad.addColorStop(0.6, '#2b8a3e'); // grass green
-    skyGrad.addColorStop(1, '#2b8a3e');
+    skyGrad.addColorStop(0, '#4a9060');   // lighter at top (distance)
+    skyGrad.addColorStop(0.35, '#3a7a4e');
+    skyGrad.addColorStop(0.65, '#2b8a3e'); // grass green
+    skyGrad.addColorStop(1, '#227a35');   // slightly darker at bottom (near)
     ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, cw, ch);
 
@@ -155,14 +155,54 @@ export class Renderer {
 
     ctx.restore();
 
-    // === ATMOSPHERIC DEPTH (screen-space fog) ===
-    // Subtle haze at the top of the screen — reinforces 3D depth
-    const fogGrad = ctx.createLinearGradient(0, 0, 0, ch * 0.45);
-    fogGrad.addColorStop(0, 'rgba(180, 210, 180, 0.15)');  // slight green haze
-    fogGrad.addColorStop(0.7, 'rgba(180, 210, 180, 0.04)');
-    fogGrad.addColorStop(1, 'rgba(180, 210, 180, 0)');      // fully transparent
+    // === ATMOSPHERIC DEPTH EFFECTS (screen-space) ===
+
+    // 1) Distance fog at top of screen ("ahead" = far away)
+    const fogGrad = ctx.createLinearGradient(0, 0, 0, ch * 0.5);
+    fogGrad.addColorStop(0, 'rgba(140, 190, 140, 0.22)');
+    fogGrad.addColorStop(0.4, 'rgba(160, 200, 160, 0.08)');
+    fogGrad.addColorStop(1, 'rgba(160, 200, 160, 0)');
     ctx.fillStyle = fogGrad;
-    ctx.fillRect(0, 0, cw, ch * 0.45);
+    ctx.fillRect(0, 0, cw, ch * 0.5);
+
+    // 2) Vignette — cinematic darkening at all edges
+    // Top edge (strongest — simulates distance horizon)
+    const vigTop = ctx.createLinearGradient(0, 0, 0, ch * 0.35);
+    vigTop.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+    vigTop.addColorStop(0.5, 'rgba(0, 0, 0, 0.10)');
+    vigTop.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = vigTop;
+    ctx.fillRect(0, 0, cw, ch * 0.35);
+
+    // Bottom edge (subtle)
+    const vigBot = ctx.createLinearGradient(0, ch, 0, ch * 0.75);
+    vigBot.addColorStop(0, 'rgba(0, 0, 0, 0.20)');
+    vigBot.addColorStop(0.5, 'rgba(0, 0, 0, 0.05)');
+    vigBot.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = vigBot;
+    ctx.fillRect(0, ch * 0.75, cw, ch * 0.25);
+
+    // Left edge
+    const vigLeft = ctx.createLinearGradient(0, 0, cw * 0.15, 0);
+    vigLeft.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
+    vigLeft.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = vigLeft;
+    ctx.fillRect(0, 0, cw * 0.15, ch);
+
+    // Right edge
+    const vigRight = ctx.createLinearGradient(cw, 0, cw * 0.85, 0);
+    vigRight.addColorStop(0, 'rgba(0, 0, 0, 0.25)');
+    vigRight.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = vigRight;
+    ctx.fillRect(cw * 0.85, 0, cw * 0.15, ch);
+
+    // 3) Radial vignette center highlight (brightens center for depth of field feel)
+    const radGrad = ctx.createRadialGradient(cw / 2, ch * 0.45, 0, cw / 2, ch * 0.45, cw * 0.6);
+    radGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    radGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+    radGrad.addColorStop(1, 'rgba(0, 0, 0, 0.18)');
+    ctx.fillStyle = radGrad;
+    ctx.fillRect(0, 0, cw, ch);
 
     // === SPEED LINES (screen-space, drawn before HUD) ===
     const player = cars.find(c => c.isPlayer);
