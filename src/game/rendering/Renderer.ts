@@ -911,6 +911,20 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
     ctx.fillRect(exL, adY + adH - 1, ew, 1);
 
+    // Sun directional lighting on the whole fence face
+    // Compute how much the sun faces this fence (dot product of sun dir and fence normal)
+    const faceNormalAngle = fence.angle - Math.PI / 2; // normal pointing "out" from fence face
+    const sunFaceDot = Math.cos(SUN_ANGLE - faceNormalAngle); // 1 = fully lit, -1 = fully shadowed
+    if (sunFaceDot < 0) {
+      // Face is away from sun — darken it
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(-sunFaceDot * 0.22, 0.22)})`;
+      ctx.fillRect(exL, -h / 2 - 5, ew, h + 10);
+    } else {
+      // Face is toward sun — brighten it slightly
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(sunFaceDot * 0.10, 0.10)})`;
+      ctx.fillRect(exL, -h / 2 - 5, ew, h + 10);
+    }
+
     ctx.restore();
   }
 
@@ -958,6 +972,21 @@ export class Renderer {
     ctx.rotate(fl.angle);
     const w = Math.abs(fl.w);
     const h = Math.abs(fl.h);
+
+    // Sun-directional shadow from the finish gantry
+    const flRelAngle = SUN_ANGLE - fl.angle;
+    const flShX = Math.cos(flRelAngle) * 10 * SHADOW_LENGTH;
+    const flShY = Math.sin(flRelAngle) * 10 * SHADOW_LENGTH;
+    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, -h / 2 - 4);
+    ctx.lineTo(w / 2, -h / 2 - 4);
+    ctx.lineTo(w / 2 + flShX, -h / 2 - 4 + flShY);
+    ctx.lineTo(w / 2 + flShX, h / 2 + 4 + flShY);
+    ctx.lineTo(-w / 2 + flShX, h / 2 + 4 + flShY);
+    ctx.lineTo(-w / 2, h / 2 + 4);
+    ctx.closePath();
+    ctx.fill();
 
     // Dark background strip behind the checkers
     ctx.fillStyle = '#222';
@@ -1065,6 +1094,25 @@ export class Renderer {
       ctx.arc(px, h / 2 - railH / 2, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Sun lighting on bridge side rails
+    const brFaceNormal = rect.angle - Math.PI / 2;
+    const brSunDot = Math.cos(SUN_ANGLE - brFaceNormal);
+    // Top rail: lit or shadowed
+    if (brSunDot < 0) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(-brSunDot * 0.15, 0.15)})`;
+    } else {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(brSunDot * 0.08, 0.08)})`;
+    }
+    ctx.fillRect(-w / 2, -h / 2, w, railH);
+    // Bottom rail: opposite lighting
+    if (brSunDot > 0) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(brSunDot * 0.15, 0.15)})`;
+    } else {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(-brSunDot * 0.08, 0.08)})`;
+    }
+    ctx.fillRect(-w / 2, h / 2 - railH, w, railH);
+
     ctx.restore();
   }
 
@@ -1201,6 +1249,19 @@ export class Renderer {
     const wallBot = Math.max(entry.y2, exit.y1);  // Bottom of wall
     const wallW = 22;
     ctx.save();
+    // Pit wall sun shadow
+    const pwShX = SUN_COS * 8 * SHADOW_LENGTH;
+    const pwShY = SUN_SIN * 8 * SHADOW_LENGTH;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(wallX - wallW / 2, wallTop);
+    ctx.lineTo(wallX + wallW / 2, wallTop);
+    ctx.lineTo(wallX + wallW / 2 + pwShX, wallTop + pwShY);
+    ctx.lineTo(wallX + wallW / 2 + pwShX, wallBot + pwShY);
+    ctx.lineTo(wallX - wallW / 2 + pwShX, wallBot + pwShY);
+    ctx.lineTo(wallX - wallW / 2, wallBot);
+    ctx.closePath();
+    ctx.fill();
     // Concrete base
     ctx.fillStyle = '#8a8a8a';
     ctx.beginPath(); ctx.roundRect(wallX - wallW / 2, wallTop, wallW, wallBot - wallTop, 8); ctx.fill();
@@ -1220,6 +1281,18 @@ export class Renderer {
     // Dark edge lines
     ctx.strokeStyle = '#555';
     ctx.lineWidth = 1.5;
+    // Sun lighting on pit wall faces
+    // Left face (toward track): check if sun hits it
+    const pitWallSunDot = SUN_COS; // wall is vertical, left face normal is -X
+    if (pitWallSunDot < 0) {
+      // Left face lit
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(wallX - wallW / 2, wallTop, wallW / 2, wallBot - wallTop);
+    } else {
+      // Left face in shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
+      ctx.fillRect(wallX - wallW / 2, wallTop, wallW / 2, wallBot - wallTop);
+    }
     ctx.beginPath();
     ctx.moveTo(wallX - wallW / 2, wallTop);
     ctx.lineTo(wallX - wallW / 2, wallBot);
@@ -1237,9 +1310,21 @@ export class Renderer {
     const gbW = Math.abs(gb.w);
     const gbH = Math.abs(gb.h);
 
-    // Building shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.beginPath(); ctx.roundRect(-gbW / 2 + 8, -gbH / 2 + 8, gbW, gbH, 12); ctx.fill();
+    // Building shadow (sun-directional)
+    const gbRelAngle = SUN_ANGLE - gb.angle;
+    const gbShDist = 18 * SHADOW_LENGTH;
+    const gbShX = Math.cos(gbRelAngle) * gbShDist;
+    const gbShY = Math.sin(gbRelAngle) * gbShDist;
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.beginPath();
+    ctx.moveTo(-gbW / 2, -gbH / 2);
+    ctx.lineTo(gbW / 2, -gbH / 2);
+    ctx.lineTo(gbW / 2 + gbShX, -gbH / 2 + gbShY);
+    ctx.lineTo(gbW / 2 + gbShX, gbH / 2 + gbShY);
+    ctx.lineTo(-gbW / 2 + gbShX, gbH / 2 + gbShY);
+    ctx.lineTo(-gbW / 2, gbH / 2);
+    ctx.closePath();
+    ctx.fill();
 
     // Main structure — dark concrete
     ctx.fillStyle = '#505560';
@@ -1353,6 +1438,19 @@ export class Renderer {
     const tlX = exit.x1 - 30;
     const tlY = exit.y1 - 20;
     ctx.save();
+    // Traffic light sun shadow (tall thin post)
+    const tlShX = SUN_COS * 12 * SHADOW_LENGTH;
+    const tlShY = SUN_SIN * 12 * SHADOW_LENGTH;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(tlX - 4, tlY);
+    ctx.lineTo(tlX + 4, tlY);
+    ctx.lineTo(tlX + 4 + tlShX, tlY + tlShY);
+    ctx.lineTo(tlX - 16 + tlShX, tlY - 90 + tlShY);
+    ctx.lineTo(tlX + 16 + tlShX, tlY - 90 + tlShY);
+    ctx.lineTo(tlX - 4 + tlShX, tlY + tlShY);
+    ctx.closePath();
+    ctx.fill();
     // Light post
     ctx.fillStyle = '#333';
     ctx.fillRect(tlX - 4, tlY - 80, 8, 80);
@@ -1626,6 +1724,27 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(-w / 2 - roofOverhang, -h / 2 + roofH - 2, w + roofOverhang * 2, 5);
 
+    // Sun-cast shadow from roof overhang onto seating below
+    const roofShRelAngle = SUN_ANGLE - rect.angle;
+    const roofShadowX = Math.cos(roofShRelAngle) * 14 * SHADOW_LENGTH;
+    const roofShadowY = Math.sin(roofShRelAngle) * 14 * SHADOW_LENGTH;
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(-w / 2 - roofOverhang, -h / 2 + roofH);
+    ctx.lineTo(w / 2 + roofOverhang, -h / 2 + roofH);
+    ctx.lineTo(w / 2 + roofOverhang + roofShadowX, -h / 2 + roofH + roofShadowY);
+    ctx.lineTo(-w / 2 - roofOverhang + roofShadowX, -h / 2 + roofH + roofShadowY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Sun lighting on roof surface
+    const roofNormalAngle = rect.angle; // roof faces up (normal = -Y in local)
+    const roofSunDot = -Math.sin(SUN_ANGLE - roofNormalAngle); // how much sun hits roof top
+    if (roofSunDot > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(roofSunDot * 0.12, 0.12)})`;
+      ctx.fillRect(-w / 2 - roofOverhang, -h / 2 - 6, w + roofOverhang * 2, roofH + 6);
+    }
+
     // ===== 5. THIN BORDER =====
     ctx.strokeStyle = '#3a3e44';
     ctx.lineWidth = 2;
@@ -1685,6 +1804,20 @@ export class Renderer {
     ctx.strokeStyle = '#445';
     ctx.lineWidth = 2;
     ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+    // Sun lighting on building faces
+    const bldFaceNormal = rect.angle - Math.PI / 2;
+    const bldSunDot = Math.cos(SUN_ANGLE - bldFaceNormal);
+    if (bldSunDot < 0) {
+      // Face away from sun — darken
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(-bldSunDot * 0.18, 0.18)})`;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    } else {
+      // Face toward sun — brighten
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(bldSunDot * 0.08, 0.08)})`;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+
     ctx.restore();
   }
 
