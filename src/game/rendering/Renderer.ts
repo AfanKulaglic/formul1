@@ -1986,12 +1986,13 @@ export class Renderer {
     const relAngle = SUN_ANGLE - car.angle; // sun direction relative to car orientation
     const shX = Math.cos(relAngle) * shadowDist * sx;
     const shY = Math.sin(relAngle) * shadowDist * sy;
+    const shadowSteer = car.smoothSteer * 0.18;
     ctx.save();
     ctx.translate(shX, shY);
     // Slight stretch along shadow direction for more convincing ground shadow
     ctx.scale(1.04, 1.04);
     ctx.fillStyle = 'rgba(0,0,0,0.30)';
-    this.drawF1Silhouette(sx, sy);
+    this.drawF1Silhouette(sx, sy, shadowSteer);
     ctx.restore();
 
     // ===== TIRE TREAD ANIMATION =====
@@ -2548,8 +2549,8 @@ export class Renderer {
     return `rgb(${Math.round(r * factor)},${Math.round(g * factor)},${Math.round(b * factor)})`;
   }
 
-  /** F1 car full silhouette for shadow */
-  private drawF1Silhouette(sx: number, sy: number): void {
+  /** F1 car full silhouette for shadow — steerAngle rotates front wheels */
+  private drawF1Silhouette(sx: number, sy: number, steerAngle: number = 0): void {
     const { ctx } = this;
     // Body shadow
     ctx.beginPath();
@@ -2571,11 +2572,24 @@ export class Renderer {
     // Wing shadows
     ctx.fillRect(66 * sx, -44 * sy, 18 * sx, 88 * sy);
     ctx.fillRect(-68 * sx, -38 * sy, 24 * sx, 76 * sy);
-    // Wheel shadows
-    ctx.fillRect(42 * sx, -44 * sy, 24 * sx, 14 * sy);
-    ctx.fillRect(42 * sx, 30 * sy, 24 * sx, 14 * sy);
+    // Rear wheel shadows (fixed orientation)
     ctx.fillRect(-52 * sx, -46 * sy, 30 * sx, 18 * sy);
     ctx.fillRect(-52 * sx, 28 * sy, 30 * sx, 18 * sy);
+    // Front wheel shadows (rotate with steering)
+    const fwW = 24 * sx;
+    const fwH = 14 * sy;
+    // Front-left
+    ctx.save();
+    ctx.translate(54 * sx, -37 * sy);
+    ctx.rotate(steerAngle);
+    ctx.fillRect(-fwW / 2, -fwH / 2, fwW, fwH);
+    ctx.restore();
+    // Front-right
+    ctx.save();
+    ctx.translate(54 * sx, 37 * sy);
+    ctx.rotate(steerAngle);
+    ctx.fillRect(-fwW / 2, -fwH / 2, fwW, fwH);
+    ctx.restore();
   }
 
   // ==================== HUD RENDERING ====================
