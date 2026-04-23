@@ -1834,14 +1834,15 @@ export class Renderer {
     const aspect = img.naturalWidth / img.naturalHeight;
 
     const ROAD_HALF = 260;            // road is 520 wide
-    const LOGO_H = 140;
+    const LOGO_H = 130;
     const LOGO_W = LOGO_H * aspect;
-    const SIDE_OFFSET = ROAD_HALF + 95;   // distance from road center to logo center
-    const INTERVAL = 900;             // arc-length spacing between samples
-    const MIN_SEP = 600;              // minimum distance between two logos
+    // Push the logo well past the fence (fences sit just outside the road edge)
+    const SIDE_OFFSET = ROAD_HALF + 220;
+    const INTERVAL = 600;             // arc-length spacing between samples
+    const MIN_SEP = 450;              // minimum distance between two logos
+    const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
 
-    // AABB of the logo (world units) used for collision checks.
-    // Use the larger of W and H to stay rotation-safe.
+    // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
 
     // Helper: is (x,y) inside a possibly-rotated rect?
@@ -1859,14 +1860,14 @@ export class Renderer {
       return Math.abs(lx) <= r.w / 2 + inflate && Math.abs(ly) <= r.h / 2 + inflate;
     };
 
-    // Obstacles we must never overlap
+    // Obstacles we must never overlap. Fences are excluded — they line the
+    // entire road, so logos go on the grass just past them.
     const obstacles: { x: number; y: number; w: number; h: number; angle: number }[] = [
       ...track.grandstands,
       ...track.buildings,
       ...track.trees,
       ...track.palms,
       ...track.bridges,
-      ...track.fences,
     ];
     if (track.pitLane) obstacles.push(track.pitLane);
     if (track.pitStop) {
@@ -1890,9 +1891,9 @@ export class Renderer {
       }
       // Reject if out of world bounds
       if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return;
-      // Reject if inside any obstacle (inflate by HALF so logo can't clip in)
+      // Reject if inside any obstacle (small inflate so logo can't visibly clip)
       for (const o of obstacles) {
-        if (insideRect(cx, cy, o, HALF)) return;
+        if (insideRect(cx, cy, o, 30)) return;
       }
       placed.push({ x: cx, y: cy });
 
@@ -1933,7 +1934,7 @@ export class Renderer {
         while (dA >  Math.PI) dA -= Math.PI * 2;
         while (dA < -Math.PI) dA += Math.PI * 2;
 
-        if (Math.abs(dA) < 0.18) {
+        if (Math.abs(dA) < STRAIGHT_RAD) {
           // Two candidate positions: left and right of the road
           tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent);
           tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent);
