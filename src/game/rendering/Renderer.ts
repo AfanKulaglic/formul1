@@ -1836,8 +1836,8 @@ export class Renderer {
     const ROAD_HALF = 260;            // road is 520 wide
     const LOGO_H = 130;
     const LOGO_W = LOGO_H * aspect;
-    // Push the logo well past the fence (fences sit just outside the road edge)
-    const SIDE_OFFSET = ROAD_HALF + 220;
+    // Push the logo just past the fence (fences sit right outside the road edge)
+    const SIDE_OFFSET = ROAD_HALF + 110;
     const INTERVAL = 600;             // arc-length spacing between samples
     const MIN_SEP = 450;              // minimum distance between two logos
     const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
