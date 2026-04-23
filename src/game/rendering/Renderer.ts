@@ -1907,6 +1907,32 @@ export class Renderer {
     const wps = track.waypoints;
     if (wps.length < 2) return;
 
+    // Direction of segment i (waypoint i -> i+1).
+    const segAng = (i: number): number => {
+      const p = wps[((i % wps.length) + wps.length) % wps.length];
+      const q = wps[(((i + 1) % wps.length) + wps.length) % wps.length];
+      return Math.atan2(q.y - p.y, q.x - p.x);
+    };
+
+    // Max bend (radians) across a window of segments centered on i.
+    // Used to demand the road is straight for a good distance, not just at
+    // this exact sample — prevents placing logos right at the start/end of
+    // long curves where one segment happens to look straight.
+    const STRAIGHT_LOOK = 3;          // segments to look ahead AND behind
+    const STRAIGHT_WINDOW_RAD = 0.30; // ~17° max bend across the whole window
+    const windowBend = (i: number): number => {
+      const base = segAng(i);
+      let maxAbs = 0;
+      for (let k = -STRAIGHT_LOOK; k <= STRAIGHT_LOOK; k++) {
+        if (k === 0) continue;
+        let d = segAng(i + k) - base;
+        while (d >  Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        if (Math.abs(d) > maxAbs) maxAbs = Math.abs(d);
+      }
+      return maxAbs;
+    };
+
     let acc = 0;
     let nextDrop = INTERVAL / 2;
 
@@ -1938,7 +1964,10 @@ export class Renderer {
         while (dA >  Math.PI) dA -= Math.PI * 2;
         while (dA < -Math.PI) dA += Math.PI * 2;
 
-        if (Math.abs(dA) < STRAIGHT_RAD) {
+        // Also require the surrounding segments to be straight.
+        const localBend = windowBend(i);
+
+        if (Math.abs(dA) < STRAIGHT_RAD && localBend < STRAIGHT_WINDOW_RAD) {
           // Symmetric placement: only draw if BOTH sides are clear, so a
           // logo on the right always has a matching one on the left.
           const lx = px + nx * SIDE_OFFSET;
