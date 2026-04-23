@@ -1934,9 +1934,11 @@ export class Renderer {
         //   (b) the TOTAL bend across the neighborhood is < TOTAL_BEND_RAD
         // This rejects both sharp turns and gentle curves that look bad.
         const segAng = (j: number): number => {
-          const p0 = wps[((j - 1) + wps.length) % wps.length];
-          const p1 = wps[j % wps.length];
-          const p2 = wps[(j + 1) % wps.length];
+          const N = wps.length;
+          const wrap = (k: number): number => ((k % N) + N) % N;
+          const p0 = wps[wrap(j - 1)];
+          const p1 = wps[wrap(j)];
+          const p2 = wps[wrap(j + 1)];
           const t1 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
           const t2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           let d = t2 - t1;
