@@ -255,6 +255,9 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
+    // --- Carlsberg grass logo ---
+    this.drawCarlsbergGrassLogo();
+
     // --- Vegetation ---
     for (const tree of track.trees) this.drawTreeArea(tree);
     for (const palm of track.palms) this.drawPalmArea(palm);
@@ -269,9 +272,6 @@ export class Renderer {
 
     // --- Pit stop complex ---
     if (track.pitStop) this.drawPitStop(track);
-
-    // --- Carlsberg grass logos (drawn after structures, before road) ---
-    this.drawCarlsbergGrassLogo();
 
     // --- Road surface as continuous waypoint path ---
     this.drawRoadSurface(track);
@@ -1817,37 +1817,36 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Carlsberg logo painted on the grass right next to straights */
+  /** Carlsberg logos painted on the grass right next to the road, horizontally oriented */
   private drawCarlsbergGrassLogo(): void {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
 
-    // Top straight: road centerline y≈1284, road edge y≈1544 (south side = inner grass).
-    // Logo placed just below the south fence, horizontal, readable left-to-right.
-    // Bottom straight: road centerline y≈10840, north edge y≈10580 (inner grass above).
-    // Logo placed just above the north fence, horizontal.
-    const spots: { cx: number; cy: number; angle: number }[] = [
-      { cx: 4100, cy: 1760, angle: 0 },       // just south of top straight fence
-      { cx: 6200, cy: 10430, angle: 0 },      // just north of bottom straight fence
+    // Angle is always 0 so text reads left-to-right on screen (facing the user).
+    // Placed just off the edge of the road on clear grass.
+    const spots: { cx: number; cy: number; w: number }[] = [
+      // Left of the main start/left vertical straight (road x≈1450, road edge x≈1190)
+      { cx: 720, cy: 4500, w: 900 },
+      // Right side, open grass east of the right vertical straight
+      { cx: 11700, cy: 6500, w: 900 },
     ];
 
     for (const spot of spots) {
-      const logoW = 950;
+      const logoW = spot.w;
       const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
-      const pad = 30;
+      const pad = 45;
 
       ctx.save();
       ctx.translate(spot.cx, spot.cy);
-      ctx.rotate(spot.angle);
 
-      // Subtle white painted base
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      // White painted base (like a ground marking)
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
       ctx.beginPath();
-      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 16);
+      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 20);
       ctx.fill();
 
-      // Logo
-      ctx.globalAlpha = 0.88;
+      // Logo with slight transparency so the grass shows through
+      ctx.globalAlpha = 0.9;
       ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
       ctx.globalAlpha = 1;
 
