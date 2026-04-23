@@ -1865,6 +1865,25 @@ export class Renderer {
       // West band: road west edge x≈1190, logo center x≈1095.
       { cx: 1095, cy: 6500, h: 140, angle: 4.7124 },
       { cx: 1095, cy: 8000, h: 140, angle: 4.7124 },
+
+      // ===== RIGHT UPPER VERTICAL — cars heading south (1.5708). =====
+      // Road around x≈10800, y≈2200-3200.
+      // East band: road east edge x≈11060, logo center x≈11160.
+      { cx: 11160, cy: 2400, h: 140, angle: 1.5708 },
+      { cx: 11160, cy: 2900, h: 140, angle: 1.5708 },
+      // West band: road west edge x≈10540, logo center x≈10440.
+      { cx: 10440, cy: 2500, h: 140, angle: 1.5708 },
+      { cx: 10440, cy: 3000, h: 140, angle: 1.5708 },
+
+      // ===== RIGHT LOWER VERTICAL — cars heading south (1.5708). =====
+      // Road runs x≈9900-10120, y≈8500-9700.
+      // East band: road east edge x≈10380, logo center x≈10480.
+      { cx: 10480, cy: 8800, h: 140, angle: 1.5708 },
+      { cx: 10480, cy: 9200, h: 140, angle: 1.5708 },
+      { cx: 10480, cy: 9600, h: 140, angle: 1.5708 },
+      // West band: road west edge x≈9640, logo center x≈9540.
+      { cx: 9540, cy: 8800, h: 140, angle: 1.5708 },
+      { cx: 9540, cy: 9400, h: 140, angle: 1.5708 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
