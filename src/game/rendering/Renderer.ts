@@ -1822,31 +1822,35 @@ export class Renderer {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
 
-    // Angle is always 0 so text reads left-to-right on screen (facing the user).
-    // Placed just off the edge of the road on clear grass.
+    // All horizontal (angle=0) so text reads normally.
+    // Spots verified clear of grandstands/buildings/trees/palms/pit lane.
     const spots: { cx: number; cy: number; w: number }[] = [
-      // Left of the main start/left vertical straight (road x≈1450, road edge x≈1190)
-      { cx: 720, cy: 4500, w: 900 },
-      // Right side, open grass east of the right vertical straight
-      { cx: 11700, cy: 6500, w: 900 },
+      // South of the bottom straight (road y≈10840, grandstand at y≈11328+).
+      // Clear band between them ~y=11000-11320.
+      { cx: 4000, cy: 11160, w: 850 },
+      { cx: 8200, cy: 11160, w: 850 },
+      // Interior of top straight — between road (y≈1284) and the interior
+      // decorations. Building at x=3982 y=2069 is below our row, tree cluster
+      // at x=4617 y=2974 is even lower. Clear grass around y=1700, x=5000-6000.
+      { cx: 5400, cy: 1720, w: 700 },
     ];
 
     for (const spot of spots) {
       const logoW = spot.w;
       const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
-      const pad = 45;
+      const pad = 35;
 
       ctx.save();
       ctx.translate(spot.cx, spot.cy);
 
-      // White painted base (like a ground marking)
+      // White painted base (ground marking)
       ctx.fillStyle = 'rgba(255,255,255,0.20)';
       ctx.beginPath();
-      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 20);
+      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 18);
       ctx.fill();
 
-      // Logo with slight transparency so the grass shows through
-      ctx.globalAlpha = 0.9;
+      // Logo
+      ctx.globalAlpha = 0.92;
       ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
       ctx.globalAlpha = 1;
 
