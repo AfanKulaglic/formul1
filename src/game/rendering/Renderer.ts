@@ -1825,13 +1825,14 @@ export class Renderer {
     const { ctx } = this;
 
     const spots: { cx: number; cy: number; w: number; angle: number }[] = [
-      // Bottom straight — cars drive westward (heading ≈ π). Rotate logo by π
-      // so text reads upright to the driver. Placed south of road (y≈10840),
-      // in the clear band before the grandstand at y≈11328.
-      { cx: 6000, cy: 11160, w: 900, angle: Math.PI },
-      // Top straight — cars drive eastward (heading ≈ 0). No rotation.
-      // Placed north of road (y≈1284), inside the clear grass around y=1720.
-      { cx: 5400, cy: 1720, w: 700, angle: 0 },
+      // Bottom straight — cars drive westward (heading ≈ π). Rotate by π + π/2
+      // so text appears horizontal on screen to the driver (camera rotates with
+      // car heading, so world-text must be perpendicular to road direction).
+      // Placed south of road (y≈10840), in clear grass before grandstand at y≈11328.
+      { cx: 6000, cy: 11160, w: 900, angle: Math.PI + Math.PI / 2 },
+      // Top straight — cars drive eastward (heading ≈ 0). Rotate by π/2.
+      // Placed north of road (y≈1284), in clear grass around y=1720.
+      { cx: 5400, cy: 1720, w: 700, angle: Math.PI / 2 },
     ];
 
     for (const spot of spots) {
