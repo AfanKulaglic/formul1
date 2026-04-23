@@ -256,7 +256,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     // --- Carlsberg logos painted beside the road ---
-    this.drawCarlsbergGrassLogo();
+    this.drawCarlsbergGrassLogo(track);
 
     // --- Vegetation ---
     for (const tree of track.trees) this.drawTreeArea(tree);
@@ -1817,69 +1817,132 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Small Carlsberg logos painted directly on the grass beside the road.
-   *  Each logo's world angle matches the direction cars drive past that spot,
-   *  so the text reads upright to the driver (camera rotates with car heading). */
-  private drawCarlsbergGrassLogo(): void {
+  /** Procedurally paint Carlsberg logos on the grass beside the road.
+   *
+   *  Walks along the track waypoints sampling every ~INTERVAL world units of
+   *  arc length. At each sample, computes the road tangent from the two
+   *  nearest waypoints, then tries to place a logo offset perpendicular on
+   *  each side of the road. Each candidate spot is:
+   *    - rotated to the tangent direction so text runs along the road,
+   *    - rejected if it overlaps any grandstand / building / tree / palm /
+   *      bridge / pit-lane / fence / other logo (so it never gets hidden).
+   */
+  private drawCarlsbergGrassLogo(track: TrackData): void {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
+    const img = this.carlsbergImg;
+    const aspect = img.naturalWidth / img.naturalHeight;
 
-    // Each spot: position, logo height, and the heading of cars driving past.
-    // Logo is rotated so its baseline is parallel to driving direction.
-    // Road is 520 wide, so road edge is 260 from center. Placing logos ~95
-    // units past the edge keeps them hugging the curb.
-    const spots: { cx: number; cy: number; h: number; angle: number }[] = [
-      // ===== BOTTOM STRAIGHT — cars heading west (π). Road y≈10840. =====
-      // South band: road south edge y≈11100, logo center y≈11195.
-      { cx: 2800, cy: 11195, h: 140, angle: Math.PI },
-      { cx: 4000, cy: 11195, h: 140, angle: Math.PI },
-      { cx: 5200, cy: 11195, h: 140, angle: Math.PI },
-      { cx: 6400, cy: 11195, h: 140, angle: Math.PI },
-      { cx: 7600, cy: 11195, h: 140, angle: Math.PI },
-      { cx: 8800, cy: 11195, h: 140, angle: Math.PI },
-      // North band: road north edge y≈10580, logo center y≈10485.
-      { cx: 3400, cy: 10485, h: 140, angle: Math.PI },
-      { cx: 4600, cy: 10485, h: 140, angle: Math.PI },
-      { cx: 5800, cy: 10485, h: 140, angle: Math.PI },
-      { cx: 7000, cy: 10485, h: 140, angle: Math.PI },
-      { cx: 8200, cy: 10485, h: 140, angle: Math.PI },
+    const ROAD_HALF = 260;            // road is 520 wide
+    const LOGO_H = 140;
+    const LOGO_W = LOGO_H * aspect;
+    const SIDE_OFFSET = ROAD_HALF + 95;   // distance from road center to logo center
+    const INTERVAL = 900;             // arc-length spacing between samples
+    const MIN_SEP = 600;              // minimum distance between two logos
 
-      // ===== TOP STRAIGHT — cars heading east (0). Road y≈1284. =====
-      // North band: road north edge y≈1024, logo center y≈930.
-      { cx: 2600, cy: 930, h: 120, angle: 0 },
-      { cx: 3400, cy: 930, h: 120, angle: 0 },
-      { cx: 4200, cy: 930, h: 120, angle: 0 },
-      // South band: road south edge y≈1544, logo center y≈1640.
-      { cx: 2800, cy: 1640, h: 130, angle: 0 },
-      { cx: 4000, cy: 1640, h: 130, angle: 0 },
+    // AABB of the logo (world units) used for collision checks.
+    // Use the larger of W and H to stay rotation-safe.
+    const HALF = Math.max(LOGO_W, LOGO_H) / 2;
 
-      // ===== LEFT VERTICAL STRAIGHT — cars heading north (4.7124). =====
-      // Road x≈1450, east edge x≈1710, logo center x≈1810.
-      // Covers y≈3000-5500 (start/finish) and y≈7200-9200.
-      { cx: 1810, cy: 3200, h: 140, angle: 4.7124 },
-      { cx: 1810, cy: 4000, h: 140, angle: 4.7124 },
-      { cx: 1810, cy: 4800, h: 140, angle: 4.7124 },
-      { cx: 1810, cy: 7400, h: 140, angle: 4.7124 },
-      { cx: 1810, cy: 8200, h: 140, angle: 4.7124 },
-      { cx: 1810, cy: 9000, h: 140, angle: 4.7124 },
-      // West band: road west edge x≈1190, logo center x≈1095.
-      { cx: 1095, cy: 6500, h: 140, angle: 4.7124 },
-      { cx: 1095, cy: 8000, h: 140, angle: 4.7124 },
+    // Helper: is (x,y) inside a possibly-rotated rect?
+    const insideRect = (
+      x: number, y: number,
+      r: { x: number; y: number; w: number; h: number; angle: number },
+      inflate = 0,
+    ): boolean => {
+      const dx = x - r.x;
+      const dy = y - r.y;
+      const c = Math.cos(-r.angle);
+      const s = Math.sin(-r.angle);
+      const lx = dx * c - dy * s;
+      const ly = dx * s + dy * c;
+      return Math.abs(lx) <= r.w / 2 + inflate && Math.abs(ly) <= r.h / 2 + inflate;
+    };
+
+    // Obstacles we must never overlap
+    const obstacles: { x: number; y: number; w: number; h: number; angle: number }[] = [
+      ...track.grandstands,
+      ...track.buildings,
+      ...track.trees,
+      ...track.palms,
+      ...track.bridges,
+      ...track.fences,
     ];
+    if (track.pitLane) obstacles.push(track.pitLane);
+    if (track.pitStop) {
+      obstacles.push(track.pitStop.garageBuilding);
+      obstacles.push(...track.pitStop.pitBoxes);
+    }
 
-    const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
+    const placed: { x: number; y: number }[] = [];
 
-    for (const spot of spots) {
-      const logoH = spot.h;
-      const logoW = logoH * aspect;
+    // Walk waypoints, keep an arc-length accumulator, drop a sample every INTERVAL.
+    const wps = track.waypoints;
+    if (wps.length < 2) return;
+
+    let acc = 0;
+    let nextDrop = INTERVAL / 2;
+
+    const tryPlace = (cx: number, cy: number, angle: number): void => {
+      // Reject if too close to a previously placed logo
+      for (const p of placed) {
+        if (Math.hypot(p.x - cx, p.y - cy) < MIN_SEP) return;
+      }
+      // Reject if out of world bounds
+      if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return;
+      // Reject if inside any obstacle (inflate by HALF so logo can't clip in)
+      for (const o of obstacles) {
+        if (insideRect(cx, cy, o, HALF)) return;
+      }
+      placed.push({ x: cx, y: cy });
 
       ctx.save();
-      ctx.translate(spot.cx, spot.cy);
-      ctx.rotate(spot.angle);
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
       ctx.globalAlpha = 0.92;
-      ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
+      ctx.drawImage(img, -LOGO_W / 2, -LOGO_H / 2, LOGO_W, LOGO_H);
       ctx.globalAlpha = 1;
       ctx.restore();
+    };
+
+    for (let i = 0; i < wps.length; i++) {
+      const a = wps[i];
+      const b = wps[(i + 1) % wps.length];
+      const segDx = b.x - a.x;
+      const segDy = b.y - a.y;
+      const segLen = Math.hypot(segDx, segDy);
+      if (segLen < 0.001) continue;
+
+      // Tangent angle of this segment (direction cars travel)
+      const tangent = Math.atan2(segDy, segDx);
+      // Unit perpendicular (to the "left" of travel direction)
+      const nx = -Math.sin(tangent);
+      const ny =  Math.cos(tangent);
+
+      // While we still have drops to place within this segment
+      while (acc + segLen >= nextDrop) {
+        const t = (nextDrop - acc) / segLen;
+        const px = a.x + segDx * t;
+        const py = a.y + segDy * t;
+
+        // Only drop on "straight enough" parts — compare this tangent
+        // to the next segment's tangent; if they differ too much, it's a curve.
+        const c = wps[(i + 2) % wps.length];
+        const nextTangent = Math.atan2(c.y - b.y, c.x - b.x);
+        let dA = nextTangent - tangent;
+        while (dA >  Math.PI) dA -= Math.PI * 2;
+        while (dA < -Math.PI) dA += Math.PI * 2;
+
+        if (Math.abs(dA) < 0.18) {
+          // Two candidate positions: left and right of the road
+          tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent);
+          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent);
+        }
+
+        nextDrop += INTERVAL;
+      }
+
+      acc += segLen;
     }
   }
 
