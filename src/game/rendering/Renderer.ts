@@ -255,6 +255,9 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
+    // --- Carlsberg grass logo ---
+    this.drawCarlsbergGrassLogo();
+
     // --- Vegetation ---
     for (const tree of track.trees) this.drawTreeArea(tree);
     for (const palm of track.palms) this.drawPalmArea(palm);
@@ -1810,6 +1813,36 @@ export class Renderer {
       ctx.fillStyle = `rgba(255,255,255,${Math.min(bldSunDot * 0.08, 0.08)})`;
       ctx.fillRect(-w / 2, -h / 2, w, h);
     }
+
+    ctx.restore();
+  }
+
+  /** Carlsberg logo painted large on the grass, north of the bottom straight */
+  private drawCarlsbergGrassLogo(): void {
+    if (!this.carlsbergImg) return;
+    const { ctx } = this;
+
+    // Position: open grass strip between the tree area (y≈9864) and
+    // the bottom straight (y≈10580), centered around x=4500, y=10200
+    const cx = 4500;
+    const cy = 10210;
+    const logoW = 920;
+    const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // White painted base — gives the "painted on grass" ground marking look
+    const pad = 40;
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 18);
+    ctx.fill();
+
+    // Logo itself with slight transparency so the grass shows through
+    ctx.globalAlpha = 0.82;
+    ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
+    ctx.globalAlpha = 1;
 
     ctx.restore();
   }
