@@ -1817,34 +1817,40 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Carlsberg logo painted large on the grass, north of the bottom straight */
+  /** Carlsberg logo painted large on the grass, south of the bottom straight */
   private drawCarlsbergGrassLogo(): void {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
 
-    // Position: open grass strip between the tree area (y≈9864) and
-    // the bottom straight (y≈10580), centered around x=4500, y=10200
-    const cx = 4500;
-    const cy = 10210;
-    const logoW = 920;
-    const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
+    const spots: { cx: number; cy: number; w: number; angle: number }[] = [
+      // South of the bottom straight (y≈10840), open green strip
+      { cx: 5200, cy: 11320, w: 1100, angle: 0 },
+      // Open grass on the right side, between the diagonal section and the right straight
+      { cx: 11200, cy: 5800, w: 1000, angle: -0.4 },
+    ];
 
-    ctx.save();
-    ctx.translate(cx, cy);
+    for (const spot of spots) {
+      const logoW = spot.w;
+      const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
+      const pad = 45;
 
-    // White painted base — gives the "painted on grass" ground marking look
-    const pad = 40;
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.beginPath();
-    ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 18);
-    ctx.fill();
+      ctx.save();
+      ctx.translate(spot.cx, spot.cy);
+      ctx.rotate(spot.angle);
 
-    // Logo itself with slight transparency so the grass shows through
-    ctx.globalAlpha = 0.82;
-    ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
-    ctx.globalAlpha = 1;
+      // White painted base
+      ctx.fillStyle = 'rgba(255,255,255,0.20)';
+      ctx.beginPath();
+      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 20);
+      ctx.fill();
 
-    ctx.restore();
+      // Logo with slight transparency so the grass shows through
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
+      ctx.globalAlpha = 1;
+
+      ctx.restore();
+    }
   }
 
   private drawFormulaBanners(): void {
