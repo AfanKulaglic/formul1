@@ -1840,11 +1840,25 @@ export class Renderer {
 
       // ===== TOP STRAIGHT — cars heading east (0) =====
       // Road center y≈1284. North band y≈920 (between road and grandstand y≈819).
+      { cx: 2600, cy: 920, h: 120, angle: 0 },
       { cx: 3400, cy: 920, h: 120, angle: 0 },
-      { cx: 5400, cy: 920, h: 120, angle: 0 },
+      { cx: 4200, cy: 920, h: 120, angle: 0 },
       // South band y≈1700 (between road and interior decorations).
+      { cx: 3300, cy: 1720, h: 140, angle: 0 },
       { cx: 5400, cy: 1720, h: 140, angle: 0 },
       { cx: 7200, cy: 1720, h: 140, angle: 0 },
+
+      // ===== LEFT VERTICAL STRAIGHT — cars heading north (3π/2 = 4.7124) =====
+      // Road center x≈1450. East band x≈1900 (clear open grass).
+      { cx: 1900, cy: 3300, h: 140, angle: 4.7124 },
+      { cx: 1900, cy: 4100, h: 140, angle: 4.7124 },
+      { cx: 1900, cy: 5800, h: 140, angle: 4.7124 },
+      { cx: 1900, cy: 8500, h: 140, angle: 4.7124 },
+
+      // ===== RIGHT VERTICAL-ISH STRETCH — cars heading south (π/2 = 1.5708) =====
+      // Road runs roughly x=9700-10120, y=8500-9700. East band x≈10700.
+      { cx: 10700, cy: 9000, h: 140, angle: 1.5708 },
+      { cx: 10700, cy: 9500, h: 140, angle: 1.5708 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
