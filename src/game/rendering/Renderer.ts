@@ -1935,11 +1935,10 @@ export class Renderer {
         while (dA < -Math.PI) dA += Math.PI * 2;
 
         if (Math.abs(dA) < STRAIGHT_RAD) {
-          // Left side of the road: image's natural "up" already points away
-          // from the road, so text reads upright to the driver.
-          tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent);
-          // Right side: flip 180° so text again faces the road right-way-up.
-          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent + Math.PI);
+          // Left side needs a 180° flip so its text reads right-way-up;
+          // right side keeps the natural tangent rotation.
+          tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent + Math.PI);
+          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent);
         }
 
         nextDrop += INTERVAL;
