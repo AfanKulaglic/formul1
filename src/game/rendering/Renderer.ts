@@ -1825,15 +1825,17 @@ export class Renderer {
     const { ctx } = this;
 
     // Each spot: position, logo height, and the heading of cars driving past.
-    // Logo is rotated so its baseline is parallel to driving direction.
+    // Logo is rotated so its text reads horizontally to the driver.
+    // All placements verified clear of grandstands, buildings, trees, palms, fences.
     const spots: { cx: number; cy: number; h: number; angle: number }[] = [
-      // Bottom straight — cars heading west (π). Road center y≈10840, south
-      // edge y≈11100, grandstand starts y≈11328. Place in the narrow grass band.
-      { cx: 4200, cy: 11215, h: 140, angle: Math.PI + Math.PI / 2 },
-      { cx: 7800, cy: 11215, h: 140, angle: Math.PI + Math.PI / 2 },
-      // Top straight — cars heading east (0). Road center y≈1284, north edge
-      // y≈1024, grandstand bottom y≈819. Narrow band between.
-      { cx: 5400, cy: 920, h: 120, angle: Math.PI / 2 },
+      // Bottom straight. Cars heading west. Road south edge y≈11100,
+      // main grandstand spans x=2596..8562 at y=11328..11664.
+      // Narrow 228-unit grass strip at y≈11100..11328 between road and grandstand.
+
+      // West of grandstand (x<2596), south of road — fully open grass.
+      { cx: 2100, cy: 11250, h: 130, angle: Math.PI + Math.PI / 2 },
+      // East of grandstand (x>8562), south of road — fully open grass.
+      { cx: 9400, cy: 11250, h: 130, angle: Math.PI + Math.PI / 2 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
