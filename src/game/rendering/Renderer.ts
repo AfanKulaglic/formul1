@@ -874,22 +874,10 @@ export class Renderer {
 
     // ===== SPONSOR IMAGE PANELS (lower half) =====
     const imgIdx = index % 4;
-    const img = this.sponsorImages[imgIdx];
-    const imgReady = this.sponsorImagesLoaded && img && img.complete && img.naturalWidth > 0;
 
-    // Panel background
+    // Panel background (solid color band — intentionally unbranded).
     ctx.fillStyle = Renderer.FENCE_AD_COLORS[imgIdx];
     ctx.fillRect(exL, adY, ew, adH);
-
-    // Tile the sponsor image
-    if (imgReady) {
-      const tileH = adH;
-      const tileW = (img.naturalWidth / img.naturalHeight) * tileH;
-      for (let tx = exL; tx < exL + ew; tx += tileW) {
-        const drawW = Math.min(tileW, exL + ew - tx);
-        ctx.drawImage(img, 0, 0, (drawW / tileW) * img.naturalWidth, img.naturalHeight, tx, adY, drawW, tileH);
-      }
-    }
 
     // Segment dividers on ad panel
     const segW = Math.max(60, Math.min(120, w / Math.max(3, Math.floor(w / 90))));
