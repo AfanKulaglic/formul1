@@ -1829,11 +1829,11 @@ export class Renderer {
     const spots: { cx: number; cy: number; h: number; angle: number }[] = [
       // Bottom straight — cars heading west (π). Road center y≈10840, south
       // edge y≈11100, grandstand starts y≈11328. Place in the narrow grass band.
-      { cx: 4200, cy: 11215, h: 140, angle: Math.PI },
-      { cx: 7800, cy: 11215, h: 140, angle: Math.PI },
+      { cx: 4200, cy: 11215, h: 140, angle: Math.PI + Math.PI / 2 },
+      { cx: 7800, cy: 11215, h: 140, angle: Math.PI + Math.PI / 2 },
       // Top straight — cars heading east (0). Road center y≈1284, north edge
       // y≈1024, grandstand bottom y≈819. Narrow band between.
-      { cx: 5400, cy: 920, h: 120, angle: 0 },
+      { cx: 5400, cy: 920, h: 120, angle: Math.PI / 2 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
