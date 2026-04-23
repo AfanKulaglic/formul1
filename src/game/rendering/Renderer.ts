@@ -1840,7 +1840,8 @@ export class Renderer {
     const SIDE_OFFSET = ROAD_HALF + 110;
     const INTERVAL = 1400;            // arc-length spacing between samples (~1 logo every ~1400 units)
     const MIN_SEP = 1200;             // minimum distance between two logos
-    const STRAIGHT_RAD = 0.18;        // ~10° — only true straights qualify
+    const STRAIGHT_RAD = 0.08;        // ~4.5° per segment — only true straights qualify
+    const TOTAL_BEND_RAD = 0.25;      // ~14° total bend across the whole neighborhood
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1928,10 +1929,11 @@ export class Renderer {
         const px = a.x + segDx * t;
         const py = a.y + segDy * t;
 
-        // Only drop on "straight enough" parts. We require the local road
-        // direction to stay nearly constant for a few waypoints both BEFORE
-        // and AFTER this point — otherwise we're on the entry/exit of a curve.
-        const angDelta = (j: number): number => {
+        // Only drop on "straight enough" parts. We require:
+        //   (a) every segment in a wide neighborhood bends < STRAIGHT_RAD
+        //   (b) the TOTAL bend across the neighborhood is < TOTAL_BEND_RAD
+        // This rejects both sharp turns and gentle curves that look bad.
+        const segAng = (j: number): number => {
           const p0 = wps[((j - 1) + wps.length) % wps.length];
           const p1 = wps[j % wps.length];
           const p2 = wps[(j + 1) % wps.length];
@@ -1940,13 +1942,17 @@ export class Renderer {
           let d = t2 - t1;
           while (d >  Math.PI) d -= Math.PI * 2;
           while (d < -Math.PI) d += Math.PI * 2;
-          return Math.abs(d);
+          return d;
         };
-        const NEIGHBOURS = 2; // check 2 waypoints back, 2 forward
+        const NEIGHBOURS = 4; // check 4 waypoints back, 4 forward
         let curvy = false;
+        let total = 0;
         for (let k = -NEIGHBOURS; k <= NEIGHBOURS; k++) {
-          if (angDelta(i + k) > STRAIGHT_RAD) { curvy = true; break; }
+          const d = segAng(i + k);
+          if (Math.abs(d) > STRAIGHT_RAD) { curvy = true; break; }
+          total += d;
         }
+        if (Math.abs(total) > TOTAL_BEND_RAD) curvy = true;
 
         if (!curvy) {
           // Symmetric placement: only draw if BOTH sides are clear, so a
