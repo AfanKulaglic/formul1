@@ -1877,26 +1877,21 @@ export class Renderer {
 
     const placed: { x: number; y: number }[] = [];
 
-    // Walk waypoints, keep an arc-length accumulator, drop a sample every INTERVAL.
-    const wps = track.waypoints;
-    if (wps.length < 2) return;
-
-    let acc = 0;
-    let nextDrop = INTERVAL / 2;
-
-    const tryPlace = (cx: number, cy: number, angle: number): void => {
-      // Reject if too close to a previously placed logo
+    // Returns true if (cx,cy) is a legal logo position (clear of obstacles,
+    // in bounds, and not too close to an already placed logo).
+    const isFree = (cx: number, cy: number): boolean => {
+      if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return false;
       for (const p of placed) {
-        if (Math.hypot(p.x - cx, p.y - cy) < MIN_SEP) return;
+        if (Math.hypot(p.x - cx, p.y - cy) < MIN_SEP) return false;
       }
-      // Reject if out of world bounds
-      if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return;
-      // Reject if inside any obstacle (small inflate so logo can't visibly clip)
       for (const o of obstacles) {
-        if (insideRect(cx, cy, o, 30)) return;
+        if (insideRect(cx, cy, o, 30)) return false;
       }
-      placed.push({ x: cx, y: cy });
+      return true;
+    };
 
+    const drawLogo = (cx: number, cy: number, angle: number): void => {
+      placed.push({ x: cx, y: cy });
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(angle);
@@ -1905,6 +1900,13 @@ export class Renderer {
       ctx.globalAlpha = 1;
       ctx.restore();
     };
+
+    // Walk waypoints, keep an arc-length accumulator, drop a sample every INTERVAL.
+    const wps = track.waypoints;
+    if (wps.length < 2) return;
+
+    let acc = 0;
+    let nextDrop = INTERVAL / 2;
 
     for (let i = 0; i < wps.length; i++) {
       const a = wps[i];
@@ -1935,10 +1937,18 @@ export class Renderer {
         while (dA < -Math.PI) dA += Math.PI * 2;
 
         if (Math.abs(dA) < STRAIGHT_RAD) {
-          // Left side needs a 180° flip so its text reads right-way-up;
-          // right side keeps the natural tangent rotation.
-          tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent + Math.PI);
-          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent);
+          // Symmetric placement: only draw if BOTH sides are clear, so a
+          // logo on the right always has a matching one on the left.
+          const lx = px + nx * SIDE_OFFSET;
+          const ly = py + ny * SIDE_OFFSET;
+          const rx = px - nx * SIDE_OFFSET;
+          const ry = py - ny * SIDE_OFFSET;
+          if (isFree(lx, ly) && isFree(rx, ry)) {
+            // Left side needs a 180° flip so its text reads right-way-up;
+            // right side keeps the natural tangent rotation.
+            drawLogo(lx, ly, tangent + Math.PI);
+            drawLogo(rx, ry, tangent);
+          }
         }
 
         nextDrop += INTERVAL;
