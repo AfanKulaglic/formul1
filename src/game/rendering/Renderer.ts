@@ -1838,8 +1838,8 @@ export class Renderer {
     const LOGO_W = LOGO_H * aspect;
     // Push the logo just past the fence (fences sit right outside the road edge)
     const SIDE_OFFSET = ROAD_HALF + 110;
-    const INTERVAL = 600;             // arc-length spacing between samples
-    const MIN_SEP = 450;              // minimum distance between two logos
+    const INTERVAL = 1400;            // arc-length spacing between samples (~1 logo every ~1400 units)
+    const MIN_SEP = 1200;             // minimum distance between two logos
     const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
 
     // Half size used for obstacle/edge checks
