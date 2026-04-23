@@ -255,7 +255,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    // --- Carlsberg grass logo ---
+    // --- Carlsberg logos painted beside the road ---
     this.drawCarlsbergGrassLogo();
 
     // --- Vegetation ---
@@ -1817,44 +1817,37 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Carlsberg logos painted on the grass right next to the road.
-   *  Each logo's world rotation matches the camera rotation at that spot
-   *  (camera rotates with car heading), so the logo reads upright to the driver. */
+  /** Small Carlsberg logos painted directly on the grass beside the road.
+   *  Each logo's world angle matches the direction cars drive past that spot,
+   *  so the text reads upright to the driver (camera rotates with car heading). */
   private drawCarlsbergGrassLogo(): void {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
 
-    const spots: { cx: number; cy: number; w: number; angle: number }[] = [
-      // Bottom straight — cars drive westward (heading ≈ π). Rotate by π + π/2
-      // so text appears horizontal on screen to the driver (camera rotates with
-      // car heading, so world-text must be perpendicular to road direction).
-      // Placed south of road (y≈10840), in clear grass before grandstand at y≈11328.
-      { cx: 6000, cy: 11160, w: 900, angle: Math.PI + Math.PI / 2 },
-      // Top straight — cars drive eastward (heading ≈ 0). Rotate by π/2.
-      // Placed north of road (y≈1284), in clear grass around y=1720.
-      { cx: 5400, cy: 1720, w: 700, angle: Math.PI / 2 },
+    // Each spot: position, logo height, and the heading of cars driving past.
+    // Logo is rotated so its baseline is parallel to driving direction.
+    const spots: { cx: number; cy: number; h: number; angle: number }[] = [
+      // Bottom straight — cars heading west (π). Road center y≈10840, south
+      // edge y≈11100, grandstand starts y≈11328. Place in the narrow grass band.
+      { cx: 4200, cy: 11215, h: 140, angle: Math.PI },
+      { cx: 7800, cy: 11215, h: 140, angle: Math.PI },
+      // Top straight — cars heading east (0). Road center y≈1284, north edge
+      // y≈1024, grandstand bottom y≈819. Narrow band between.
+      { cx: 5400, cy: 920, h: 120, angle: 0 },
     ];
 
+    const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
+
     for (const spot of spots) {
-      const logoW = spot.w;
-      const logoH = logoW / (this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight);
-      const pad = 35;
+      const logoH = spot.h;
+      const logoW = logoH * aspect;
 
       ctx.save();
       ctx.translate(spot.cx, spot.cy);
       ctx.rotate(spot.angle);
-
-      // White painted base (ground marking)
-      ctx.fillStyle = 'rgba(255,255,255,0.20)';
-      ctx.beginPath();
-      ctx.roundRect(-logoW / 2 - pad, -logoH / 2 - pad, logoW + pad * 2, logoH + pad * 2, 18);
-      ctx.fill();
-
-      // Logo
       ctx.globalAlpha = 0.92;
       ctx.drawImage(this.carlsbergImg, -logoW / 2, -logoH / 2, logoW, logoH);
       ctx.globalAlpha = 1;
-
       ctx.restore();
     }
   }
