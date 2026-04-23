@@ -1840,7 +1840,7 @@ export class Renderer {
     const SIDE_OFFSET = ROAD_HALF + 110;
     const INTERVAL = 1400;            // arc-length spacing between samples (~1 logo every ~1400 units)
     const MIN_SEP = 1200;             // minimum distance between two logos
-    const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
+    const STRAIGHT_RAD = 0.18;        // ~10° — only true straights qualify
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1928,15 +1928,27 @@ export class Renderer {
         const px = a.x + segDx * t;
         const py = a.y + segDy * t;
 
-        // Only drop on "straight enough" parts — compare this tangent
-        // to the next segment's tangent; if they differ too much, it's a curve.
-        const c = wps[(i + 2) % wps.length];
-        const nextTangent = Math.atan2(c.y - b.y, c.x - b.x);
-        let dA = nextTangent - tangent;
-        while (dA >  Math.PI) dA -= Math.PI * 2;
-        while (dA < -Math.PI) dA += Math.PI * 2;
+        // Only drop on "straight enough" parts. We require the local road
+        // direction to stay nearly constant for a few waypoints both BEFORE
+        // and AFTER this point — otherwise we're on the entry/exit of a curve.
+        const angDelta = (j: number): number => {
+          const p0 = wps[((j - 1) + wps.length) % wps.length];
+          const p1 = wps[j % wps.length];
+          const p2 = wps[(j + 1) % wps.length];
+          const t1 = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+          const t2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          let d = t2 - t1;
+          while (d >  Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          return Math.abs(d);
+        };
+        const NEIGHBOURS = 2; // check 2 waypoints back, 2 forward
+        let curvy = false;
+        for (let k = -NEIGHBOURS; k <= NEIGHBOURS; k++) {
+          if (angDelta(i + k) > STRAIGHT_RAD) { curvy = true; break; }
+        }
 
-        if (Math.abs(dA) < STRAIGHT_RAD) {
+        if (!curvy) {
           // Symmetric placement: only draw if BOTH sides are clear, so a
           // logo on the right always has a matching one on the left.
           const lx = px + nx * SIDE_OFFSET;
