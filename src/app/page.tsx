@@ -8,7 +8,7 @@ const GameCanvas = dynamic(() => import('@/components/GameCanvas'), {
 
 export default function Home() {
   return (
-    <div id="game-container">
+    <div id="game-container" suppressHydrationWarning>
       <GameCanvas />
     </div>
   );
