@@ -1935,9 +1935,11 @@ export class Renderer {
         while (dA < -Math.PI) dA += Math.PI * 2;
 
         if (Math.abs(dA) < STRAIGHT_RAD) {
-          // Two candidate positions: left and right of the road
+          // Two candidate positions: left and right of the road.
+          // Right-side logo is flipped 180° so its baseline faces the road
+          // (like real trackside billboards), keeping text upright to drivers.
           tryPlace(px + nx * SIDE_OFFSET, py + ny * SIDE_OFFSET, tangent);
-          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent);
+          tryPlace(px - nx * SIDE_OFFSET, py - ny * SIDE_OFFSET, tangent + Math.PI);
         }
 
         nextDrop += INTERVAL;
