@@ -1826,39 +1826,45 @@ export class Renderer {
 
     // Each spot: position, logo height, and the heading of cars driving past.
     // Logo is rotated so its baseline is parallel to driving direction.
+    // Road is 520 wide, so road edge is 260 from center. Placing logos ~95
+    // units past the edge keeps them hugging the curb.
     const spots: { cx: number; cy: number; h: number; angle: number }[] = [
-      // ===== BOTTOM STRAIGHT — cars heading west (π) =====
-      // Road center y≈10840. South band y≈11215 (before grandstand at y≈11328).
-      { cx: 3200, cy: 11215, h: 140, angle: Math.PI },
-      { cx: 5000, cy: 11215, h: 140, angle: Math.PI },
-      { cx: 6800, cy: 11215, h: 140, angle: Math.PI },
-      { cx: 8600, cy: 11215, h: 140, angle: Math.PI },
-      // North band y≈10500 (between road and tree area ending y≈9864).
-      { cx: 4000, cy: 10460, h: 140, angle: Math.PI },
-      { cx: 6000, cy: 10460, h: 140, angle: Math.PI },
-      { cx: 8000, cy: 10460, h: 140, angle: Math.PI },
+      // ===== BOTTOM STRAIGHT — cars heading west (π). Road y≈10840. =====
+      // South band: road south edge y≈11100, logo center y≈11195.
+      { cx: 2800, cy: 11195, h: 140, angle: Math.PI },
+      { cx: 4000, cy: 11195, h: 140, angle: Math.PI },
+      { cx: 5200, cy: 11195, h: 140, angle: Math.PI },
+      { cx: 6400, cy: 11195, h: 140, angle: Math.PI },
+      { cx: 7600, cy: 11195, h: 140, angle: Math.PI },
+      { cx: 8800, cy: 11195, h: 140, angle: Math.PI },
+      // North band: road north edge y≈10580, logo center y≈10485.
+      { cx: 3400, cy: 10485, h: 140, angle: Math.PI },
+      { cx: 4600, cy: 10485, h: 140, angle: Math.PI },
+      { cx: 5800, cy: 10485, h: 140, angle: Math.PI },
+      { cx: 7000, cy: 10485, h: 140, angle: Math.PI },
+      { cx: 8200, cy: 10485, h: 140, angle: Math.PI },
 
-      // ===== TOP STRAIGHT — cars heading east (0) =====
-      // Road center y≈1284. North band y≈920 (between road and grandstand y≈819).
-      { cx: 2600, cy: 920, h: 120, angle: 0 },
-      { cx: 3400, cy: 920, h: 120, angle: 0 },
-      { cx: 4200, cy: 920, h: 120, angle: 0 },
-      // South band y≈1700 (between road and interior decorations).
-      { cx: 3300, cy: 1720, h: 140, angle: 0 },
-      { cx: 5400, cy: 1720, h: 140, angle: 0 },
-      { cx: 7200, cy: 1720, h: 140, angle: 0 },
+      // ===== TOP STRAIGHT — cars heading east (0). Road y≈1284. =====
+      // North band: road north edge y≈1024, logo center y≈930.
+      { cx: 2600, cy: 930, h: 120, angle: 0 },
+      { cx: 3400, cy: 930, h: 120, angle: 0 },
+      { cx: 4200, cy: 930, h: 120, angle: 0 },
+      // South band: road south edge y≈1544, logo center y≈1640.
+      { cx: 2800, cy: 1640, h: 130, angle: 0 },
+      { cx: 4000, cy: 1640, h: 130, angle: 0 },
 
-      // ===== LEFT VERTICAL STRAIGHT — cars heading north (3π/2 = 4.7124) =====
-      // Road center x≈1450. East band x≈1900 (clear open grass).
-      { cx: 1900, cy: 3300, h: 140, angle: 4.7124 },
-      { cx: 1900, cy: 4100, h: 140, angle: 4.7124 },
-      { cx: 1900, cy: 5800, h: 140, angle: 4.7124 },
-      { cx: 1900, cy: 8500, h: 140, angle: 4.7124 },
-
-      // ===== RIGHT VERTICAL-ISH STRETCH — cars heading south (π/2 = 1.5708) =====
-      // Road runs roughly x=9700-10120, y=8500-9700. East band x≈10700.
-      { cx: 10700, cy: 9000, h: 140, angle: 1.5708 },
-      { cx: 10700, cy: 9500, h: 140, angle: 1.5708 },
+      // ===== LEFT VERTICAL STRAIGHT — cars heading north (4.7124). =====
+      // Road x≈1450, east edge x≈1710, logo center x≈1810.
+      // Covers y≈3000-5500 (start/finish) and y≈7200-9200.
+      { cx: 1810, cy: 3200, h: 140, angle: 4.7124 },
+      { cx: 1810, cy: 4000, h: 140, angle: 4.7124 },
+      { cx: 1810, cy: 4800, h: 140, angle: 4.7124 },
+      { cx: 1810, cy: 7400, h: 140, angle: 4.7124 },
+      { cx: 1810, cy: 8200, h: 140, angle: 4.7124 },
+      { cx: 1810, cy: 9000, h: 140, angle: 4.7124 },
+      // West band: road west edge x≈1190, logo center x≈1095.
+      { cx: 1095, cy: 6500, h: 140, angle: 4.7124 },
+      { cx: 1095, cy: 8000, h: 140, angle: 4.7124 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
