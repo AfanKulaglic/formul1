@@ -1817,22 +1817,21 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Carlsberg logos painted on the grass right next to the road, horizontally oriented */
+  /** Carlsberg logos painted on the grass right next to the road.
+   *  Each logo's world rotation matches the camera rotation at that spot
+   *  (camera rotates with car heading), so the logo reads upright to the driver. */
   private drawCarlsbergGrassLogo(): void {
     if (!this.carlsbergImg) return;
     const { ctx } = this;
 
-    // All horizontal (angle=0) so text reads normally.
-    // Spots verified clear of grandstands/buildings/trees/palms/pit lane.
-    const spots: { cx: number; cy: number; w: number }[] = [
-      // South of the bottom straight (road y≈10840, grandstand at y≈11328+).
-      // Clear band between them ~y=11000-11320.
-      { cx: 4000, cy: 11160, w: 850 },
-      { cx: 8200, cy: 11160, w: 850 },
-      // Interior of top straight — between road (y≈1284) and the interior
-      // decorations. Building at x=3982 y=2069 is below our row, tree cluster
-      // at x=4617 y=2974 is even lower. Clear grass around y=1700, x=5000-6000.
-      { cx: 5400, cy: 1720, w: 700 },
+    const spots: { cx: number; cy: number; w: number; angle: number }[] = [
+      // Bottom straight — cars drive westward (heading ≈ π). Rotate logo by π
+      // so text reads upright to the driver. Placed south of road (y≈10840),
+      // in the clear band before the grandstand at y≈11328.
+      { cx: 6000, cy: 11160, w: 900, angle: Math.PI },
+      // Top straight — cars drive eastward (heading ≈ 0). No rotation.
+      // Placed north of road (y≈1284), inside the clear grass around y=1720.
+      { cx: 5400, cy: 1720, w: 700, angle: 0 },
     ];
 
     for (const spot of spots) {
@@ -1842,6 +1841,7 @@ export class Renderer {
 
       ctx.save();
       ctx.translate(spot.cx, spot.cy);
+      ctx.rotate(spot.angle);
 
       // White painted base (ground marking)
       ctx.fillStyle = 'rgba(255,255,255,0.20)';
