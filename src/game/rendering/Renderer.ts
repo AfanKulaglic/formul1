@@ -1825,17 +1825,26 @@ export class Renderer {
     const { ctx } = this;
 
     // Each spot: position, logo height, and the heading of cars driving past.
-    // Logo is rotated so its text reads horizontally to the driver.
-    // All placements verified clear of grandstands, buildings, trees, palms, fences.
+    // Logo is rotated so its baseline is parallel to driving direction.
     const spots: { cx: number; cy: number; h: number; angle: number }[] = [
-      // Bottom straight. Cars heading west. Road south edge y≈11100,
-      // main grandstand spans x=2596..8562 at y=11328..11664.
-      // Narrow 228-unit grass strip at y≈11100..11328 between road and grandstand.
+      // ===== BOTTOM STRAIGHT — cars heading west (π) =====
+      // Road center y≈10840. South band y≈11215 (before grandstand at y≈11328).
+      { cx: 3200, cy: 11215, h: 140, angle: Math.PI },
+      { cx: 5000, cy: 11215, h: 140, angle: Math.PI },
+      { cx: 6800, cy: 11215, h: 140, angle: Math.PI },
+      { cx: 8600, cy: 11215, h: 140, angle: Math.PI },
+      // North band y≈10500 (between road and tree area ending y≈9864).
+      { cx: 4000, cy: 10460, h: 140, angle: Math.PI },
+      { cx: 6000, cy: 10460, h: 140, angle: Math.PI },
+      { cx: 8000, cy: 10460, h: 140, angle: Math.PI },
 
-      // West of grandstand (x<2596), south of road — fully open grass.
-      { cx: 2100, cy: 11250, h: 130, angle: Math.PI + Math.PI / 2 },
-      // East of grandstand (x>8562), south of road — fully open grass.
-      { cx: 9400, cy: 11250, h: 130, angle: Math.PI + Math.PI / 2 },
+      // ===== TOP STRAIGHT — cars heading east (0) =====
+      // Road center y≈1284. North band y≈920 (between road and grandstand y≈819).
+      { cx: 3400, cy: 920, h: 120, angle: 0 },
+      { cx: 5400, cy: 920, h: 120, angle: 0 },
+      // South band y≈1700 (between road and interior decorations).
+      { cx: 5400, cy: 1720, h: 140, angle: 0 },
+      { cx: 7200, cy: 1720, h: 140, angle: 0 },
     ];
 
     const aspect = this.carlsbergImg.naturalWidth / this.carlsbergImg.naturalHeight;
