@@ -1828,7 +1828,7 @@ export class Renderer {
     const SIDE_OFFSET = ROAD_HALF + 110;
     const INTERVAL = 700;             // arc-length spacing between samples
     const MIN_SEP = 550;              // minimum distance between two logos
-    const STRAIGHT_RAD = 0.30;        // ~17° max deviation across the look-ahead window
+    const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1865,10 +1865,23 @@ export class Renderer {
 
     const placed: { x: number; y: number }[] = [];
 
+    // Manual exclusion zones — axis-aligned rects where logos must never
+    // appear even if the geometry looks straight enough. Use for bends
+    // where a logo would look awkward.
+    const excludeZones: { x1: number; y1: number; x2: number; y2: number }[] = [
+      // NW bend: transition from the left vertical straight up to the top
+      // horizontal straight. Covers the curve through waypoints 3-6.
+      { x1: 1300, y1: 1200, x2: 2700, y2: 2800 },
+    ];
+
     // Returns true if (cx,cy) is a legal logo position (clear of obstacles,
-    // in bounds, and not too close to an already placed logo).
+    // in bounds, not inside an exclusion zone, and not too close to an
+    // already placed logo).
     const isFree = (cx: number, cy: number): boolean => {
       if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return false;
+      for (const z of excludeZones) {
+        if (cx >= z.x1 && cx <= z.x2 && cy >= z.y1 && cy <= z.y2) return false;
+      }
       for (const p of placed) {
         if (Math.hypot(p.x - cx, p.y - cy) < MIN_SEP) return false;
       }
@@ -1916,24 +1929,15 @@ export class Renderer {
         const px = a.x + segDx * t;
         const py = a.y + segDy * t;
 
-        // Only drop on "straight enough" parts. A long sweeping bend has
-        // small per-segment deltas yet still curves strongly — so we look
-        // at the TOTAL tangent change across several segments in both
-        // directions and reject anything that curves meaningfully overall.
-        const LOOK = 3;
-        let maxDelta = 0;
-        for (let k = -LOOK; k <= LOOK; k++) {
-          if (k === 0) continue;
-          const j = ((i + k) % wps.length + wps.length) % wps.length;
-          const jn = (j + 1) % wps.length;
-          const other = Math.atan2(wps[jn].y - wps[j].y, wps[jn].x - wps[j].x);
-          let d = other - tangent;
-          while (d >  Math.PI) d -= Math.PI * 2;
-          while (d < -Math.PI) d += Math.PI * 2;
-          if (Math.abs(d) > maxDelta) maxDelta = Math.abs(d);
-        }
+        // Only drop on "straight enough" parts — compare this tangent
+        // to the next segment's tangent; if they differ too much, it's a curve.
+        const c = wps[(i + 2) % wps.length];
+        const nextTangent = Math.atan2(c.y - b.y, c.x - b.x);
+        let dA = nextTangent - tangent;
+        while (dA >  Math.PI) dA -= Math.PI * 2;
+        while (dA < -Math.PI) dA += Math.PI * 2;
 
-        if (maxDelta < STRAIGHT_RAD) {
+        if (Math.abs(dA) < STRAIGHT_RAD) {
           // Symmetric placement: only draw if BOTH sides are clear, so a
           // logo on the right always has a matching one on the left.
           const lx = px + nx * SIDE_OFFSET;
