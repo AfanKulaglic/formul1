@@ -1960,14 +1960,13 @@ export class Renderer {
         const ny =  Math.cos(tangent);
 
         // Find the closest free offset on each side (start at SIDE_OFFSET,
-        // push outward step-by-step if blocked). This keeps placement
-        // STRICTLY paired — every right-side logo has a matching left-side
-        // logo at the same arc length, and vice versa.
-        // Push far enough to clear pit lane / bridge / grandstand blocks
-        // (which can be ~1000+ units wide next to the road).
+        // push outward step-by-step if blocked). Small push budget so that
+        // normal obstacles (trees, grandstands) just fail → paired rule
+        // keeps things symmetric. Only a truly unreachable side (pit lane
+        // behind a wall) will return null.
         const findOffset = (sign: number): number | null => {
-          const MAX_STEPS = 22;
-          const STEP = 90;
+          const MAX_STEPS = 4;
+          const STEP = 70;
           for (let k = 0; k < MAX_STEPS; k++) {
             const off = SIDE_OFFSET + k * STEP;
             const cx = px + sign * nx * off;
@@ -1985,14 +1984,25 @@ export class Renderer {
           const ly = py + ny * leftOff;
           const rx = px - nx * rightOff;
           const ry = py - ny * rightOff;
+          // Paired placement — both sides clear at a reasonable offset.
           // Left side is 180°-flipped so both read upright to a driver on the road.
           drawLogo(lx, ly, tangent + Math.PI);
           drawLogo(rx, ry, tangent);
           lastPlacedS = s;
+        } else if (leftOff !== null && rightOff === null) {
+          // The right side is completely blocked (e.g. pit lane wall).
+          // Allow a single-sided logo here so the stretch isn't empty.
+          const lx = px + nx * leftOff;
+          const ly = py + ny * leftOff;
+          drawLogo(lx, ly, tangent + Math.PI);
+          lastPlacedS = s;
+        } else if (rightOff !== null && leftOff === null) {
+          const rx = px - nx * rightOff;
+          const ry = py - ny * rightOff;
+          drawLogo(rx, ry, tangent);
+          lastPlacedS = s;
         }
-        // Otherwise (one or both sides have NO free grass anywhere within
-        // reach — e.g. tight pit area with a wall right behind the fence)
-        // we skip this spot entirely so logos always appear in pairs.
+        // else: both sides unreachable — skip entirely.
       }
 
       s += SAMPLE_STEP;
