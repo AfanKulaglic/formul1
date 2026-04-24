@@ -1826,8 +1826,8 @@ export class Renderer {
     const LOGO_W = LOGO_H * aspect;
     // Push the logo just past the fence (fences sit right outside the road edge)
     const SIDE_OFFSET = ROAD_HALF + 110;
-    const INTERVAL = 1100;            // minimum arc-length spacing between placed pairs
-    const MIN_SEP = 900;              // minimum straight-line distance between two logos
+    const INTERVAL = 1800;            // minimum arc-length spacing between placed pairs
+    const MIN_SEP = 1500;             // minimum straight-line distance between two logos
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1959,15 +1959,13 @@ export class Renderer {
         const nx = -Math.sin(tangent);
         const ny =  Math.cos(tangent);
 
-        // Try the default grass offset on each side. Strict pairs: if EITHER
-        // side is blocked, we normally skip (so we never see a lonely logo).
-        // The ONE allowed exception is the pit-lane stretch: the pit road
-        // is so wide we can't reach grass past it, and the user explicitly
-        // wants a single-sided logo there. We detect that case by testing
-        // whether the blocked sample sits inside `track.pitLane`.
-        const tryOffset = (sign: number): number | null => {
-          const MAX_STEPS = 4;
-          const STEP = 70;
+        // Find the closest free offset on each side (start at SIDE_OFFSET,
+        // push outward step-by-step if blocked). This keeps placement
+        // STRICTLY paired — every right-side logo has a matching left-side
+        // logo at the same arc length, and vice versa.
+        const findOffset = (sign: number): number | null => {
+          const MAX_STEPS = 6;
+          const STEP = 60;
           for (let k = 0; k < MAX_STEPS; k++) {
             const off = SIDE_OFFSET + k * STEP;
             const cx = px + sign * nx * off;
@@ -1977,19 +1975,10 @@ export class Renderer {
           return null;
         };
 
-        const isBlockedByPit = (sign: number): boolean => {
-          if (!track.pitLane) return false;
-          // Sample well into the grass zone the logo would occupy.
-          const cx = px + sign * nx * SIDE_OFFSET;
-          const cy = py + sign * ny * SIDE_OFFSET;
-          return insideRect(cx, cy, track.pitLane, 40);
-        };
-
-        const leftOff = tryOffset(+1);
-        const rightOff = tryOffset(-1);
+        const leftOff = findOffset(+1);
+        const rightOff = findOffset(-1);
 
         if (leftOff !== null && rightOff !== null) {
-          // Normal case: pair on both sides.
           const lx = px + nx * leftOff;
           const ly = py + ny * leftOff;
           const rx = px - nx * rightOff;
@@ -1998,20 +1987,10 @@ export class Renderer {
           drawLogo(lx, ly, tangent + Math.PI);
           drawLogo(rx, ry, tangent);
           lastPlacedS = s;
-        } else if (leftOff !== null && rightOff === null && isBlockedByPit(-1)) {
-          // Pit-lane exception: right side is pit road, draw only the left logo.
-          const lx = px + nx * leftOff;
-          const ly = py + ny * leftOff;
-          drawLogo(lx, ly, tangent + Math.PI);
-          lastPlacedS = s;
-        } else if (rightOff !== null && leftOff === null && isBlockedByPit(+1)) {
-          // Pit-lane exception on the other side.
-          const rx = px - nx * rightOff;
-          const ry = py - ny * rightOff;
-          drawLogo(rx, ry, tangent);
-          lastPlacedS = s;
         }
-        // Otherwise skip entirely — keeps logos paired everywhere else.
+        // Otherwise (one or both sides have NO free grass anywhere within
+        // reach — e.g. tight pit area with a wall right behind the fence)
+        // we skip this spot entirely so logos always appear in pairs.
       }
 
       s += SAMPLE_STEP;
