@@ -872,10 +872,10 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.12)';
     ctx.fillRect(exL, wallY + wallH - 1.5, ew, 1.5);
 
-    // ===== AD PANEL (lower half) — unbranded colored strip =====
+    // ===== SPONSOR IMAGE PANELS (lower half) =====
     const imgIdx = index % 4;
 
-    // Panel background
+    // Panel background (plain color, no sponsor artwork so fences stay unbranded)
     ctx.fillStyle = Renderer.FENCE_AD_COLORS[imgIdx];
     ctx.fillRect(exL, adY, ew, adH);
 
