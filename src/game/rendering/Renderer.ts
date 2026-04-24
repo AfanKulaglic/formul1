@@ -1828,8 +1828,7 @@ export class Renderer {
     const SIDE_OFFSET = ROAD_HALF + 110;
     const INTERVAL = 700;             // arc-length spacing between samples
     const MIN_SEP = 550;              // minimum distance between two logos
-    const STRAIGHT_RAD = 0.18;        // ~10° — stricter straightness check
-    const STRAIGHT_LOOKAHEAD = 2;     // segments to look ahead/behind for bends
+    const STRAIGHT_RAD = 0.30;        // ~17° max deviation across the look-ahead window
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1917,25 +1916,24 @@ export class Renderer {
         const px = a.x + segDx * t;
         const py = a.y + segDy * t;
 
-        // Only drop on "straight enough" parts — compare this tangent
-        // to the tangent of a few neighboring segments on both sides. If ANY
-        // nearby segment bends too much, treat this spot as a curve and skip.
-        let isStraight = true;
-        for (let k = -STRAIGHT_LOOKAHEAD; k <= STRAIGHT_LOOKAHEAD; k++) {
+        // Only drop on "straight enough" parts. A long sweeping bend has
+        // small per-segment deltas yet still curves strongly — so we look
+        // at the TOTAL tangent change across several segments in both
+        // directions and reject anything that curves meaningfully overall.
+        const LOOK = 3;
+        let maxDelta = 0;
+        for (let k = -LOOK; k <= LOOK; k++) {
           if (k === 0) continue;
           const j = ((i + k) % wps.length + wps.length) % wps.length;
-          const j2 = (j + 1) % wps.length;
-          const dx = wps[j2].x - wps[j].x;
-          const dy = wps[j2].y - wps[j].y;
-          if (dx === 0 && dy === 0) continue;
-          const neighborTan = Math.atan2(dy, dx);
-          let dA = neighborTan - tangent;
-          while (dA >  Math.PI) dA -= Math.PI * 2;
-          while (dA < -Math.PI) dA += Math.PI * 2;
-          if (Math.abs(dA) >= STRAIGHT_RAD) { isStraight = false; break; }
+          const jn = (j + 1) % wps.length;
+          const other = Math.atan2(wps[jn].y - wps[j].y, wps[jn].x - wps[j].x);
+          let d = other - tangent;
+          while (d >  Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          if (Math.abs(d) > maxDelta) maxDelta = Math.abs(d);
         }
 
-        if (isStraight) {
+        if (maxDelta < STRAIGHT_RAD) {
           // Symmetric placement: only draw if BOTH sides are clear, so a
           // logo on the right always has a matching one on the left.
           const lx = px + nx * SIDE_OFFSET;
