@@ -1963,9 +1963,21 @@ export class Renderer {
         const rx = px - nx * SIDE_OFFSET;
         const ry = py - ny * SIDE_OFFSET;
 
-        if (isFree(lx, ly) && isFree(rx, ry)) {
+        const leftOk = isFree(lx, ly);
+        const rightOk = isFree(rx, ry);
+
+        // Prefer a symmetric pair. If only one side is clear (pit lane,
+        // bridge, grandstand on the other side), still drop a single logo
+        // there so no long stretch of grass is logo-less.
+        if (leftOk && rightOk) {
           // Left side is 180°-flipped so both read upright to a driver on the road.
           drawLogo(lx, ly, tangent + Math.PI);
+          drawLogo(rx, ry, tangent);
+          lastPlacedS = s;
+        } else if (leftOk) {
+          drawLogo(lx, ly, tangent + Math.PI);
+          lastPlacedS = s;
+        } else if (rightOk) {
           drawLogo(rx, ry, tangent);
           lastPlacedS = s;
         }
