@@ -1826,9 +1826,8 @@ export class Renderer {
     const LOGO_W = LOGO_H * aspect;
     // Push the logo just past the fence (fences sit right outside the road edge)
     const SIDE_OFFSET = ROAD_HALF + 110;
-    const INTERVAL = 700;             // arc-length spacing between samples
-    const MIN_SEP = 550;              // minimum distance between two logos
-    const STRAIGHT_RAD = 0.45;        // ~26° — allow gentle bends
+    const INTERVAL = 700;             // minimum arc-length spacing between placed pairs
+    const MIN_SEP = 550;              // minimum straight-line distance between two logos
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1889,60 +1888,91 @@ export class Renderer {
       ctx.restore();
     };
 
-    // Walk waypoints, keep an arc-length accumulator, drop a sample every INTERVAL.
+    // Walk waypoints, sampling the centerline densely. We advance a running
+    // arc length `s` and ONLY try to place a pair when we're at least
+    // INTERVAL past the last successful placement. If a sample is blocked
+    // (obstacle, bounds, bad curvature) we keep walking; the spacing is
+    // measured from the previous logo, so skipped spots don't create giant
+    // gaps — the next clear sample gets a pair.
     const wps = track.waypoints;
     if (wps.length < 2) return;
 
-    let acc = 0;
-    let nextDrop = INTERVAL / 2;
+    const SAMPLE_STEP = 80;           // fine sampling along the centerline
+    const MAX_CURVATURE = 0.9;        // reject very sharp turns (radians between adjacent tangents)
 
-    for (let i = 0; i < wps.length; i++) {
-      const a = wps[i];
+    // Precompute segment tangents + lengths so we can smooth the tangent
+    // by averaging the current and next segments (gives nicer rotation
+    // on gentle bends).
+    const segs = wps.map((a, i) => {
       const b = wps[(i + 1) % wps.length];
-      const segDx = b.x - a.x;
-      const segDy = b.y - a.y;
-      const segLen = Math.hypot(segDx, segDy);
-      if (segLen < 0.001) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy);
+      return { a, b, dx, dy, len, tangent: Math.atan2(dy, dx) };
+    });
 
-      // Tangent angle of this segment (direction cars travel)
-      const tangent = Math.atan2(segDy, segDx);
-      // Unit perpendicular (to the "left" of travel direction)
-      const nx = -Math.sin(tangent);
-      const ny =  Math.cos(tangent);
+    let lastPlacedS = -Infinity;      // arc length of the last placed pair
+    let s = 0;                         // current arc length from start of loop
+    let segIndex = 0;
+    let segS = 0;                      // arc length into the current segment
 
-      // While we still have drops to place within this segment
-      while (acc + segLen >= nextDrop) {
-        const t = (nextDrop - acc) / segLen;
-        const px = a.x + segDx * t;
-        const py = a.y + segDy * t;
+    // Pick a random phase so placements don't always start at the same spot
+    // — but keep it deterministic across frames by seeding on logo count.
+    // (Simple: start at SAMPLE_STEP/2 so first sample isn't at the line start.)
+    s = SAMPLE_STEP / 2;
+    segS = s;
 
-        // Only drop on "straight enough" parts — compare this tangent
-        // to the next segment's tangent; if they differ too much, it's a curve.
-        const c = wps[(i + 2) % wps.length];
-        const nextTangent = Math.atan2(c.y - b.y, c.x - b.x);
-        let dA = nextTangent - tangent;
-        while (dA >  Math.PI) dA -= Math.PI * 2;
-        while (dA < -Math.PI) dA += Math.PI * 2;
+    // Total loop length, used only to stop the outer loop.
+    let totalLen = 0;
+    for (const sg of segs) totalLen += sg.len;
+    if (totalLen < 1) return;
 
-        if (Math.abs(dA) < STRAIGHT_RAD) {
-          // Symmetric placement: only draw if BOTH sides are clear, so a
-          // logo on the right always has a matching one on the left.
-          const lx = px + nx * SIDE_OFFSET;
-          const ly = py + ny * SIDE_OFFSET;
-          const rx = px - nx * SIDE_OFFSET;
-          const ry = py - ny * SIDE_OFFSET;
-          if (isFree(lx, ly) && isFree(rx, ry)) {
-            // Left side needs a 180° flip so its text reads right-way-up;
-            // right side keeps the natural tangent rotation.
-            drawLogo(lx, ly, tangent + Math.PI);
-            drawLogo(rx, ry, tangent);
-          }
+    while (s < totalLen) {
+      // Advance segment index until segS fits inside current segment
+      while (segIndex < segs.length && segS > segs[segIndex].len) {
+        segS -= segs[segIndex].len;
+        segIndex++;
+      }
+      if (segIndex >= segs.length) break;
+
+      const sg = segs[segIndex];
+      const nextSg = segs[(segIndex + 1) % segs.length];
+
+      // Position on the centerline
+      const t = sg.len > 0.001 ? segS / sg.len : 0;
+      const px = sg.a.x + sg.dx * t;
+      const py = sg.a.y + sg.dy * t;
+
+      // Smoothed tangent: blend current + next segment weighted by how far
+      // we are through the current segment. This avoids the tangent jumping
+      // instantly at a waypoint corner.
+      let dA = nextSg.tangent - sg.tangent;
+      while (dA >  Math.PI) dA -= Math.PI * 2;
+      while (dA < -Math.PI) dA += Math.PI * 2;
+      const curvature = Math.abs(dA);
+      const blend = Math.min(1, Math.max(0, t));
+      const tangent = sg.tangent + dA * blend * 0.5; // only half-blend to stay closer to the current heading
+
+      // Only attempt placement if we're past the min interval from the last
+      // successful pair, and the curvature isn't extreme.
+      if (s - lastPlacedS >= INTERVAL && curvature <= MAX_CURVATURE) {
+        const nx = -Math.sin(tangent);
+        const ny =  Math.cos(tangent);
+        const lx = px + nx * SIDE_OFFSET;
+        const ly = py + ny * SIDE_OFFSET;
+        const rx = px - nx * SIDE_OFFSET;
+        const ry = py - ny * SIDE_OFFSET;
+
+        if (isFree(lx, ly) && isFree(rx, ry)) {
+          // Left side is 180°-flipped so both read upright to a driver on the road.
+          drawLogo(lx, ly, tangent + Math.PI);
+          drawLogo(rx, ry, tangent);
+          lastPlacedS = s;
         }
-
-        nextDrop += INTERVAL;
       }
 
-      acc += segLen;
+      s += SAMPLE_STEP;
+      segS += SAMPLE_STEP;
     }
   }
 
