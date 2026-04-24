@@ -1865,23 +1865,10 @@ export class Renderer {
 
     const placed: { x: number; y: number }[] = [];
 
-    // Manual exclusion zones — axis-aligned rects where logos must never
-    // appear even if the geometry looks straight enough. Use for bends
-    // where a logo would look awkward.
-    const excludeZones: { x1: number; y1: number; x2: number; y2: number }[] = [
-      // SE bend: the big sweeping curve from the right vertical straight
-      // down into the bottom horizontal straight. Covers waypoints ~38-46.
-      { x1: 8800, y1: 8300, x2: 10500, y2: 10900 },
-    ];
-
     // Returns true if (cx,cy) is a legal logo position (clear of obstacles,
-    // in bounds, not inside an exclusion zone, and not too close to an
-    // already placed logo).
+    // in bounds, and not too close to an already placed logo).
     const isFree = (cx: number, cy: number): boolean => {
       if (cx < HALF || cy < HALF || cx > track.width - HALF || cy > track.height - HALF) return false;
-      for (const z of excludeZones) {
-        if (cx >= z.x1 && cx <= z.x2 && cy >= z.y1 && cy <= z.y2) return false;
-      }
       for (const p of placed) {
         if (Math.hypot(p.x - cx, p.y - cy) < MIN_SEP) return false;
       }
@@ -3055,6 +3042,11 @@ export class Renderer {
     ctx.fillText(this.formatTime(state.raceTime), timeX + timeW / 2, timeY + timeH / 2);
     ctx.restore();
 
+    // --- Pause button (top bar, left of minimap) ---
+    if (!state.playerFinished) {
+      this.renderPauseHudButton(cw, ch);
+    }
+
     // --- Drift indicator ---
     if (player.driftAngle > 0.2) {
       ctx.save();
@@ -3673,6 +3665,149 @@ export class Renderer {
       { id: 'finish_restart', x: btnX, y: startY, w: btnW, h: btnH },
       { id: 'finish_menu', x: btnX, y: startY + btnH + gap, w: btnW, h: btnH },
     ];
+  }
+
+  /** HUD pause icon button (top bar). Size/position adapts to device. */
+  getPauseHudButton(cw: number, _ch: number): { id: string; x: number; y: number; w: number; h: number } {
+    const isMobile = !!this.input?.isMobile;
+    const scale = cw / 1080;
+    const topBarY = 14 * scale;
+    const topBarH = 64 * scale;
+    const topPad = 14 * scale;
+    const minimapSize = isMobile ? 210 * scale : 150 * scale;
+    const size = topBarH;
+    // Sit immediately to the left of the minimap
+    const x = cw - topPad - minimapSize - size - 8 * scale;
+    const y = topBarY;
+    return { id: 'hud_pause', x, y, w: size, h: size };
+  }
+
+  /** Buttons shown on the pause overlay. */
+  getPauseButtons(cw: number, ch: number): { id: string; x: number; y: number; w: number; h: number }[] {
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
+    const btnW = 420 * scale;
+    const btnH = 72 * scale;
+    const btnX = (cw - btnW) / 2;
+    const gap = 20 * scale;
+    const startY = ch * 0.42;
+    return [
+      { id: 'pause_resume',  x: btnX, y: startY,                      w: btnW, h: btnH },
+      { id: 'pause_restart', x: btnX, y: startY + (btnH + gap),       w: btnW, h: btnH },
+      { id: 'pause_menu',    x: btnX, y: startY + (btnH + gap) * 2,   w: btnW, h: btnH },
+    ];
+  }
+
+  /** Draw the small pause icon button on the HUD. */
+  renderPauseHudButton(cw: number, ch: number): void {
+    const { ctx } = this;
+    const btn = this.getPauseHudButton(cw, ch);
+    const scale = cw / 1080;
+    const r = 16 * scale;
+
+    // Glass panel background (same style as HUD bar)
+    const grad = ctx.createLinearGradient(btn.x, btn.y, btn.x, btn.y + btn.h);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0.40)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(btn.x, btn.y, btn.w, btn.h, r);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(btn.x, btn.y, btn.w, btn.h, r);
+    ctx.stroke();
+
+    // Two vertical bars (pause glyph)
+    const cx = btn.x + btn.w / 2;
+    const cy = btn.y + btn.h / 2;
+    const barW = 7 * scale;
+    const barH = btn.h * 0.42;
+    const gap = 6 * scale;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.roundRect(cx - gap / 2 - barW, cy - barH / 2, barW, barH, 2 * scale);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.roundRect(cx + gap / 2,        cy - barH / 2, barW, barH, 2 * scale);
+    ctx.fill();
+  }
+
+  /** Render the pause overlay on top of the frozen race scene.
+   *  Styled consistently with the main menu + finish screen (glass panel,
+   *  red accent, glassmorphic buttons). */
+  renderPauseOverlay(): void {
+    const { ctx } = this;
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+    const isMobile = !!this.input?.isMobile;
+    const scale = isMobile ? cw / 500 : cw / 1080;
+
+    // Dim the scene behind the overlay
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(0, 0, cw, ch);
+
+    // Red accent line at top (matches main menu)
+    ctx.fillStyle = '#e10600';
+    ctx.fillRect(0, 0, cw, 4 * scale);
+
+    // Glass title panel
+    const panelW = Math.min(560 * scale, cw - 40 * scale);
+    const panelH = 170 * scale;
+    const panelX = (cw - panelW) / 2;
+    const panelY = ch * 0.16;
+    const panelR = 20 * scale;
+
+    const panelGrad = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelGrad.addColorStop(0, 'rgba(0, 0, 0, 0.55)');
+    panelGrad.addColorStop(1, 'rgba(0, 0, 0, 0.70)');
+    ctx.fillStyle = panelGrad;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelW, panelH, panelR);
+    ctx.stroke();
+
+    // Red accent bar on left of panel
+    ctx.fillStyle = '#e10600';
+    ctx.beginPath();
+    ctx.roundRect(panelX + 14 * scale, panelY + 22 * scale, 5 * scale, panelH - 44 * scale, 2 * scale);
+    ctx.fill();
+
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${56 * scale}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('PAUSED', cw / 2, panelY + 70 * scale);
+
+    // Subtitle
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.font = `${20 * scale}px sans-serif`;
+    ctx.fillText('RACE SUSPENDED', cw / 2, panelY + 118 * scale);
+
+    // Buttons
+    const buttons = this.getPauseButtons(cw, ch);
+    const labels: Record<string, string> = {
+      pause_resume: 'RESUME',
+      pause_restart: 'RESTART RACE',
+      pause_menu: 'BACK TO MENU',
+    };
+    const accents: Record<string, string> = {
+      pause_resume: '#44cc44',
+      pause_restart: '#e10600',
+      pause_menu: 'rgba(255,255,255,0.2)',
+    };
+    for (const btn of buttons) {
+      this.renderMenuButton(btn.x, btn.y, btn.w, btn.h, labels[btn.id], scale, accents[btn.id]);
+    }
+
+    ctx.restore();
   }
 
   getMenuButtons(menuState: MenuState, cw: number, ch: number): { id: string; x: number; y: number; w: number; h: number }[] {

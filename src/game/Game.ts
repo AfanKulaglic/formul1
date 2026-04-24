@@ -38,6 +38,7 @@ export class Game {
   private cars: Car[] = [];
   private track: TrackData;
   private running: boolean = false;
+  private paused: boolean = false;
   private lastTime: number = 0;
   private animFrameId: number = 0;
 
@@ -83,11 +84,15 @@ export class Game {
     this.input.onTap = this.handleRestartTap;
 
     // Finish screen button handlers (persistent during gameplay)
-    this.finishClickHandler = (e: MouseEvent) => this.handleFinishClick(e.clientX, e.clientY);
+    this.finishClickHandler = (e: MouseEvent) => this.handleGameplayClick(e.clientX, e.clientY);
     this.finishTouchHandler = (e: TouchEvent) => {
-      if (e.touches.length > 0 && this.raceManager.getState().playerFinished) {
+      if (this.menuState.gamePhase !== 'playing') return;
+      if (e.touches.length === 0) return;
+      // Only swallow the event when the tap hits an actual UI button, so
+      // the steering/brake touch zones still work during racing.
+      if (this.gameplayClickHitsUI(e.touches[0].clientX, e.touches[0].clientY)) {
         e.preventDefault();
-        this.handleFinishClick(e.touches[0].clientX, e.touches[0].clientY);
+        this.handleGameplayClick(e.touches[0].clientX, e.touches[0].clientY);
       }
     };
     this.canvas.addEventListener('click', this.finishClickHandler);
@@ -130,6 +135,7 @@ export class Game {
     this.cars = [];
     this.raceManager = new RaceManager(this.track);
     this.aiSystem = new AISystem(this.track.waypoints, this.track.brakeAIZones);
+    this.paused = false;
     this.startRace(wasSolo);
   }
 
@@ -137,6 +143,7 @@ export class Game {
   private startRace(solo: boolean): void {
     this.menuState.gamePhase = 'playing';
     this.menuState.soloMode = solo;
+    this.paused = false;
     this.detachMenuHandlers();
 
     this.createCars();
@@ -151,6 +158,14 @@ export class Game {
       e.preventDefault();
       this.restart();
     }
+    // Toggle pause while racing
+    if ((e.code === 'Escape' || e.code === 'KeyP') && this.menuState.gamePhase === 'playing') {
+      const raceState = this.raceManager.getState();
+      if (!raceState.playerFinished) {
+        e.preventDefault();
+        this.setPaused(!this.paused);
+      }
+    }
     // Manual respawn: press R while racing
     if (e.code === 'KeyR' && this.menuState.gamePhase === 'playing') {
       const player = this.cars.find(c => c.isPlayer);
@@ -160,28 +175,88 @@ export class Game {
     }
   };
 
-  /** Handle clicks on the finish screen buttons */
-  private handleFinishClick(clientX: number, clientY: number): void {
-    if (!this.raceManager.getState().playerFinished) return;
+  /** Toggle or set the paused state. Resets the frame-time clock on resume
+   *  so the first post-resume dt isn't a huge leap. Also clears pressed keys
+   *  so the player doesn't inherit input that was held during pause. */
+  private setPaused(next: boolean): void {
+    if (this.paused === next) return;
+    this.paused = next;
+    if (!next) {
+      this.lastTime = performance.now();
+      this.input.clearKeys();
+    }
+  }
 
+  /** Convert a client coordinate into canvas space (accounting for CSS scaling). */
+  private clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     const cw = this.camera.canvasWidth;
     const ch = this.camera.canvasHeight;
-    const scaleX = cw / rect.width;
-    const scaleY = ch / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
+    return {
+      x: (clientX - rect.left) * (cw / rect.width),
+      y: (clientY - rect.top) * (ch / rect.height),
+    };
+  }
 
-    const buttons = this.renderer.getFinishButtons(cw, ch);
-    for (const btn of buttons) {
-      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-        if (btn.id === 'finish_restart') {
-          this.restart();
-        } else if (btn.id === 'finish_menu') {
-          this.backToMenu();
+  /** True if the tap is on a gameplay UI control (HUD pause button,
+   *  pause overlay button, or finish-screen button). */
+  private gameplayClickHitsUI(clientX: number, clientY: number): boolean {
+    const { x, y } = this.clientToCanvas(clientX, clientY);
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+
+    const inside = (b: { x: number; y: number; w: number; h: number }) =>
+      x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+
+    const raceState = this.raceManager.getState();
+    if (raceState.playerFinished) {
+      return this.renderer.getFinishButtons(cw, ch).some(inside);
+    }
+    if (this.paused) {
+      return this.renderer.getPauseButtons(cw, ch).some(inside);
+    }
+    return inside(this.renderer.getPauseHudButton(cw, ch));
+  }
+
+  /** Route a gameplay tap to the correct UI layer. */
+  private handleGameplayClick(clientX: number, clientY: number): void {
+    if (this.menuState.gamePhase !== 'playing') return;
+    const { x, y } = this.clientToCanvas(clientX, clientY);
+    const cw = this.camera.canvasWidth;
+    const ch = this.camera.canvasHeight;
+    const hit = (b: { x: number; y: number; w: number; h: number }) =>
+      x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+
+    const raceState = this.raceManager.getState();
+
+    // 1) Finish screen has priority when it's up.
+    if (raceState.playerFinished) {
+      for (const btn of this.renderer.getFinishButtons(cw, ch)) {
+        if (hit(btn)) {
+          if (btn.id === 'finish_restart') this.restart();
+          else if (btn.id === 'finish_menu') this.backToMenu();
+          return;
         }
-        return;
       }
+      return;
+    }
+
+    // 2) Pause overlay is modal.
+    if (this.paused) {
+      for (const btn of this.renderer.getPauseButtons(cw, ch)) {
+        if (hit(btn)) {
+          if (btn.id === 'pause_resume')  this.setPaused(false);
+          else if (btn.id === 'pause_restart') this.restart();
+          else if (btn.id === 'pause_menu')    this.backToMenu();
+          return;
+        }
+      }
+      return;
+    }
+
+    // 3) HUD pause button while racing.
+    if (hit(this.renderer.getPauseHudButton(cw, ch))) {
+      this.setPaused(true);
     }
   }
 
@@ -198,6 +273,7 @@ export class Game {
     this.cars = [];
     this.raceManager = new RaceManager(this.track);
     this.aiSystem = new AISystem(this.track.waypoints, this.track.brakeAIZones);
+    this.paused = false;
     this.menuState.gamePhase = 'menu';
     this.menuState.screen = 'main';
     this.attachMenuHandlers();
@@ -303,8 +379,16 @@ export class Game {
     if (this.menuState.gamePhase === 'menu') {
       this.renderMenu();
     } else {
-      this.update(dt);
-      this.render();
+      if (this.paused) {
+        // Render frozen scene + pause overlay; keep clock in sync so resume
+        // doesn't get a giant dt.
+        this.render();
+        this.renderer.renderPauseOverlay();
+        this.lastTime = time;
+      } else {
+        this.update(dt);
+        this.render();
+      }
     }
 
     this.animFrameId = requestAnimationFrame(this.gameLoop);

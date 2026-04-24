@@ -81,6 +81,19 @@ export class InputManager {
     this.onTap = null;
   }
 
+  /** Clear all latched keyboard + touch state. Useful when returning from
+   *  a pause so the player doesn't resume with input that was held. */
+  clearKeys(): void {
+    this.keys.clear();
+    this.touchZones.left = false;
+    this.touchZones.right = false;
+    this.touchZones.brake = false;
+    this.leftPressed = false;
+    this.rightPressed = false;
+    this.brakePressed = false;
+    this.activeTouches.clear();
+  }
+
   /** Recalculate button positions based on canvas CSS size. Call after resize. */
   updateButtonRects(): void {
     if (!this.canvas) return;
