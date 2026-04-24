@@ -1869,10 +1869,9 @@ export class Renderer {
     // appear even if the geometry looks straight enough. Use for bends
     // where a logo would look awkward.
     const excludeZones: { x1: number; y1: number; x2: number; y2: number }[] = [
-      // NW bend + its approach: the whole curving section from the top of
-      // the left vertical straight through to the start of the top straight.
-      // Covers waypoints 1-7 so no logo lands on any part of that sweep.
-      { x1: 1000, y1: 1100, x2: 3200, y2: 3800 },
+      // SE bend: the big sweeping curve from the right vertical straight
+      // down into the bottom horizontal straight. Covers waypoints ~38-46.
+      { x1: 8800, y1: 8300, x2: 10500, y2: 10900 },
     ];
 
     // Returns true if (cx,cy) is a legal logo position (clear of obstacles,
