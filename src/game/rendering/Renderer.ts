@@ -1826,8 +1826,8 @@ export class Renderer {
     const LOGO_W = LOGO_H * aspect;
     // Push the logo just past the fence (fences sit right outside the road edge)
     const SIDE_OFFSET = ROAD_HALF + 110;
-    const INTERVAL = 700;             // minimum arc-length spacing between placed pairs
-    const MIN_SEP = 550;              // minimum straight-line distance between two logos
+    const INTERVAL = 1100;            // minimum arc-length spacing between placed pairs
+    const MIN_SEP = 900;              // minimum straight-line distance between two logos
 
     // Half size used for obstacle/edge checks
     const HALF = Math.max(LOGO_W, LOGO_H) / 2;
@@ -1959,31 +1959,38 @@ export class Renderer {
         const nx = -Math.sin(tangent);
         const ny =  Math.cos(tangent);
 
-        // Try several offsets. If the default side offset is blocked on one
-        // side (pit lane, bridge, grandstand), walk further out perpendicular
-        // from the road until it's clear. This lets us keep symmetric pairs
-        // without leaving whole sections of grass logo-less.
-        const offsets = [SIDE_OFFSET, SIDE_OFFSET + 180, SIDE_OFFSET + 360, SIDE_OFFSET + 540];
-
-        const findFree = (signX: number, signY: number): { x: number; y: number } | null => {
-          for (const off of offsets) {
-            const cx = px + signX * off;
-            const cy = py + signY * off;
-            if (isFree(cx, cy)) return { x: cx, y: cy };
+        // Find the closest free offset on each side (start at SIDE_OFFSET,
+        // push outward step-by-step if blocked). This keeps placement
+        // STRICTLY paired — every right-side logo has a matching left-side
+        // logo at the same arc length, and vice versa.
+        const findOffset = (sign: number): number | null => {
+          const MAX_STEPS = 6;
+          const STEP = 60;
+          for (let k = 0; k < MAX_STEPS; k++) {
+            const off = SIDE_OFFSET + k * STEP;
+            const cx = px + sign * nx * off;
+            const cy = py + sign * ny * off;
+            if (isFree(cx, cy)) return off;
           }
           return null;
         };
 
-        const left  = findFree(nx, ny);          // left side of road
-        const right = findFree(-nx, -ny);        // right side of road
+        const leftOff = findOffset(+1);
+        const rightOff = findOffset(-1);
 
-        // Only draw if BOTH sides found a clear spot, so every logo has a
-        // matching one on the opposite side.
-        if (left && right) {
-          drawLogo(left.x,  left.y,  tangent + Math.PI);
-          drawLogo(right.x, right.y, tangent);
+        if (leftOff !== null && rightOff !== null) {
+          const lx = px + nx * leftOff;
+          const ly = py + ny * leftOff;
+          const rx = px - nx * rightOff;
+          const ry = py - ny * rightOff;
+          // Left side is 180°-flipped so both read upright to a driver on the road.
+          drawLogo(lx, ly, tangent + Math.PI);
+          drawLogo(rx, ry, tangent);
           lastPlacedS = s;
         }
+        // Otherwise (one or both sides have NO free grass anywhere within
+        // reach — e.g. tight pit area with a wall right behind the fence)
+        // we skip this spot entirely so logos always appear in pairs.
       }
 
       s += SAMPLE_STEP;
