@@ -760,6 +760,11 @@ export class Renderer {
   // 4 sponsor ad fallback colors (used while images load)
   private static readonly FENCE_AD_COLORS: string[] = ['#1a6b34','#ffffff','#ffffff','#ffffff'];
 
+  /** Multiplier applied to raw game speed (px/s) for the HUD km/h readout.
+   *  Top game speed is ~850 px/s; 0.4 puts the peak around ~340 km/h,
+   *  which sits in realistic F1 territory. */
+  private static readonly SPEED_DISPLAY_SCALE = 0.4;
+
   private drawFence(fence: Rect, index: number): void {
     const { ctx } = this;
     ctx.save();
@@ -2912,7 +2917,9 @@ export class Renderer {
     const scale = cw / 1080; // Scale HUD to fit canvas width
 
     // --- Speed display (bottom-left) — hidden on mobile (shown in mobile controls) ---
-    const speed = Math.round(Math.abs(player.behavior.speed));
+    // Convert raw game speed (px/s) to a roughly realistic F1 km/h readout.
+    // Top game speed ~850 px/s maps to ~340 km/h.
+    const speed = Math.round(Math.abs(player.behavior.speed) * Renderer.SPEED_DISPLAY_SCALE);
     if (!this.input?.isMobile) {
     ctx.save();
     ctx.font = `bold ${64 * scale}px monospace`;
@@ -3248,7 +3255,7 @@ export class Renderer {
 
     // --- Speed display integrated into mobile controls ---
     if (player) {
-      const speed = Math.round(Math.abs(player.behavior.speed));
+      const speed = Math.round(Math.abs(player.behavior.speed) * Renderer.SPEED_DISPLAY_SCALE);
       const ratio = Math.abs(player.behavior.speed) / player.maxSpeed;
       const gearText = player.gear === 0 ? 'N' : `${player.gear}`;
 
