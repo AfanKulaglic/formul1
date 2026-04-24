@@ -1959,12 +1959,13 @@ export class Renderer {
         const nx = -Math.sin(tangent);
         const ny =  Math.cos(tangent);
 
-        // Find the closest free offset on each side (start at SIDE_OFFSET,
-        // push outward step-by-step if blocked). Small push budget so that
-        // normal obstacles (trees, grandstands) just fail → paired rule
-        // keeps things symmetric. Only a truly unreachable side (pit lane
-        // behind a wall) will return null.
-        const findOffset = (sign: number): number | null => {
+        // Try the default grass offset on each side. Strict pairs: if EITHER
+        // side is blocked, we normally skip (so we never see a lonely logo).
+        // The ONE allowed exception is the pit-lane stretch: the pit road
+        // is so wide we can't reach grass past it, and the user explicitly
+        // wants a single-sided logo there. We detect that case by testing
+        // whether the blocked sample sits inside `track.pitLane`.
+        const tryOffset = (sign: number): number | null => {
           const MAX_STEPS = 4;
           const STEP = 70;
           for (let k = 0; k < MAX_STEPS; k++) {
@@ -1976,33 +1977,41 @@ export class Renderer {
           return null;
         };
 
-        const leftOff = findOffset(+1);
-        const rightOff = findOffset(-1);
+        const isBlockedByPit = (sign: number): boolean => {
+          if (!track.pitLane) return false;
+          // Sample well into the grass zone the logo would occupy.
+          const cx = px + sign * nx * SIDE_OFFSET;
+          const cy = py + sign * ny * SIDE_OFFSET;
+          return insideRect(cx, cy, track.pitLane, 40);
+        };
+
+        const leftOff = tryOffset(+1);
+        const rightOff = tryOffset(-1);
 
         if (leftOff !== null && rightOff !== null) {
+          // Normal case: pair on both sides.
           const lx = px + nx * leftOff;
           const ly = py + ny * leftOff;
           const rx = px - nx * rightOff;
           const ry = py - ny * rightOff;
-          // Paired placement — both sides clear at a reasonable offset.
           // Left side is 180°-flipped so both read upright to a driver on the road.
           drawLogo(lx, ly, tangent + Math.PI);
           drawLogo(rx, ry, tangent);
           lastPlacedS = s;
-        } else if (leftOff !== null && rightOff === null) {
-          // The right side is completely blocked (e.g. pit lane wall).
-          // Allow a single-sided logo here so the stretch isn't empty.
+        } else if (leftOff !== null && rightOff === null && isBlockedByPit(-1)) {
+          // Pit-lane exception: right side is pit road, draw only the left logo.
           const lx = px + nx * leftOff;
           const ly = py + ny * leftOff;
           drawLogo(lx, ly, tangent + Math.PI);
           lastPlacedS = s;
-        } else if (rightOff !== null && leftOff === null) {
+        } else if (rightOff !== null && leftOff === null && isBlockedByPit(+1)) {
+          // Pit-lane exception on the other side.
           const rx = px - nx * rightOff;
           const ry = py - ny * rightOff;
           drawLogo(rx, ry, tangent);
           lastPlacedS = s;
         }
-        // else: both sides unreachable — skip entirely.
+        // Otherwise skip entirely — keeps logos paired everywhere else.
       }
 
       s += SAMPLE_STEP;
