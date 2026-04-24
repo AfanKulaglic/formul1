@@ -1958,27 +1958,30 @@ export class Renderer {
       if (s - lastPlacedS >= INTERVAL && curvature <= MAX_CURVATURE) {
         const nx = -Math.sin(tangent);
         const ny =  Math.cos(tangent);
-        const lx = px + nx * SIDE_OFFSET;
-        const ly = py + ny * SIDE_OFFSET;
-        const rx = px - nx * SIDE_OFFSET;
-        const ry = py - ny * SIDE_OFFSET;
 
-        const leftOk = isFree(lx, ly);
-        const rightOk = isFree(rx, ry);
+        // Try several offsets. If the default side offset is blocked on one
+        // side (pit lane, bridge, grandstand), walk further out perpendicular
+        // from the road until it's clear. This lets us keep symmetric pairs
+        // without leaving whole sections of grass logo-less.
+        const offsets = [SIDE_OFFSET, SIDE_OFFSET + 180, SIDE_OFFSET + 360, SIDE_OFFSET + 540];
 
-        // Prefer a symmetric pair. If only one side is clear (pit lane,
-        // bridge, grandstand on the other side), still drop a single logo
-        // there so no long stretch of grass is logo-less.
-        if (leftOk && rightOk) {
-          // Left side is 180°-flipped so both read upright to a driver on the road.
-          drawLogo(lx, ly, tangent + Math.PI);
-          drawLogo(rx, ry, tangent);
-          lastPlacedS = s;
-        } else if (leftOk) {
-          drawLogo(lx, ly, tangent + Math.PI);
-          lastPlacedS = s;
-        } else if (rightOk) {
-          drawLogo(rx, ry, tangent);
+        const findFree = (signX: number, signY: number): { x: number; y: number } | null => {
+          for (const off of offsets) {
+            const cx = px + signX * off;
+            const cy = py + signY * off;
+            if (isFree(cx, cy)) return { x: cx, y: cy };
+          }
+          return null;
+        };
+
+        const left  = findFree(nx, ny);          // left side of road
+        const right = findFree(-nx, -ny);        // right side of road
+
+        // Only draw if BOTH sides found a clear spot, so every logo has a
+        // matching one on the opposite side.
+        if (left && right) {
+          drawLogo(left.x,  left.y,  tangent + Math.PI);
+          drawLogo(right.x, right.y, tangent);
           lastPlacedS = s;
         }
       }
