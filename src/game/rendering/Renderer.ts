@@ -1963,9 +1963,11 @@ export class Renderer {
         // push outward step-by-step if blocked). This keeps placement
         // STRICTLY paired — every right-side logo has a matching left-side
         // logo at the same arc length, and vice versa.
+        // Push far enough to clear pit lane / bridge / grandstand blocks
+        // (which can be ~1000+ units wide next to the road).
         const findOffset = (sign: number): number | null => {
-          const MAX_STEPS = 16;
-          const STEP = 80;
+          const MAX_STEPS = 22;
+          const STEP = 90;
           for (let k = 0; k < MAX_STEPS; k++) {
             const off = SIDE_OFFSET + k * STEP;
             const cx = px + sign * nx * off;
