@@ -1964,8 +1964,8 @@ export class Renderer {
         // STRICTLY paired — every right-side logo has a matching left-side
         // logo at the same arc length, and vice versa.
         const findOffset = (sign: number): number | null => {
-          const MAX_STEPS = 6;
-          const STEP = 60;
+          const MAX_STEPS = 16;
+          const STEP = 80;
           for (let k = 0; k < MAX_STEPS; k++) {
             const off = SIDE_OFFSET + k * STEP;
             const cx = px + sign * nx * off;
