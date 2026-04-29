@@ -1,0 +1,29 @@
+import type { Metadata, Viewport } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Formula Racers",
+  description: "Top-down formula racing game",
+  icons: {
+    icon: "/favicon.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
+    </html>
+  );
+}
